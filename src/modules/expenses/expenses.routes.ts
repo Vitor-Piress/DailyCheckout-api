@@ -37,6 +37,10 @@ export async function expensesRoutes(app: FastifyInstance) {
           required: ["date"],
           properties: { date: { type: "string", format: "date" } },
         },
+        response: {
+          200: { type: "array", items: { $ref: "Expense#" } },
+          400: { $ref: "ErrorResponse#" },
+        },
       },
     },
     async (request, reply) => {
@@ -78,20 +82,10 @@ export async function expensesRoutes(app: FastifyInstance) {
       schema: {
         tags: ["expenses"],
         summary: "Registra uma despesa",
-        body: {
-          type: "object",
-          required: ["description", "amountCents", "paymentMethod"],
-          properties: {
-            description: { type: "string", maxLength: 200 },
-            amountCents: { type: "integer", minimum: 1 },
-            category: { type: "string", maxLength: 100 },
-            paymentMethod: {
-              type: "string",
-              enum: ["cash", "pix", "credit_card", "debit_card", "other"],
-            },
-            occurredAt: { type: "string", format: "date-time" },
-            notes: { type: "string", maxLength: 500 },
-          },
+        body: { $ref: "CreateExpenseInput#" },
+        response: {
+          201: { $ref: "Expense#" },
+          400: { $ref: "ErrorResponse#" },
         },
       },
     },

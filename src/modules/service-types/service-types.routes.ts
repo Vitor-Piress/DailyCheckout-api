@@ -13,15 +13,7 @@ export async function serviceTypesRoutes(app: FastifyInstance) {
         response: {
           200: {
             type: "array",
-            items: {
-              type: "object",
-              properties: {
-                id: { type: "string", format: "uuid" },
-                name: { type: "string" },
-                description: { type: ["string", "null"] },
-                priceCents: { type: "integer", minimum: 0 },
-              },
-            },
+            items: { $ref: "ServiceType#" },
           },
         },
       },

@@ -8,6 +8,7 @@ import { serviceRecordsRoutes } from "./modules/service-records/service-records.
 import { expensesRoutes } from "./modules/expenses/expenses.routes.js";
 import { reportsRoutes } from "./modules/reports/reports.routes.js";
 import { env } from "./env.js";
+import { registerSchemas } from "./docs/schemas.js";
 
 export async function buildApp() {
   const app = Fastify({
@@ -18,6 +19,10 @@ export async function buildApp() {
     origin: env.CORS_ORIGIN,
   });
   await app.register(swagger, {
+    refResolver: {
+      buildLocalReference: (json, _baseUri, _fragment, i) =>
+        typeof json.$id === "string" ? json.$id : `schema-${i}`,
+    },
     openapi: {
       info: {
         title: "DailyCheckout API",
@@ -36,6 +41,7 @@ export async function buildApp() {
   await app.register(swaggerUi, {
     routePrefix: "/docs",
   });
+  await registerSchemas(app);
 
   app.get(
     "/health",

@@ -62,6 +62,10 @@ export async function reportsRoutes(app: FastifyInstance) {
           required: ["date"],
           properties: { date: { type: "string", format: "date" } },
         },
+        response: {
+          200: { $ref: "DailyReport#" },
+          400: { $ref: "ErrorResponse#" },
+        },
       },
     },
     async (request, reply) => {
@@ -143,6 +147,10 @@ export async function reportsRoutes(app: FastifyInstance) {
             },
             date: { type: "string", format: "date" },
           },
+        },
+        response: {
+          200: { $ref: "PeriodicReport#" },
+          400: { $ref: "ErrorResponse#" },
         },
       },
     },

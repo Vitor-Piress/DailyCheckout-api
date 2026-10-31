@@ -33,6 +33,10 @@ export async function serviceRecordsRoutes(app: FastifyInstance) {
           required: ["date"],
           properties: { date: { type: "string", format: "date" } },
         },
+        response: {
+          200: { type: "array", items: { $ref: "ServiceRecord#" } },
+          400: { $ref: "ErrorResponse#" },
+        },
       },
     },
     async (request, reply) => {
@@ -75,18 +79,11 @@ export async function serviceRecordsRoutes(app: FastifyInstance) {
       schema: {
         tags: ["service-records"],
         summary: "Registra um atendimento",
-        body: {
-          type: "object",
-          required: ["serviceTypeId", "paymentMethod"],
-          properties: {
-            serviceTypeId: { type: "string", format: "uuid" },
-            paymentMethod: {
-              type: "string",
-              enum: ["cash", "pix", "credit_card", "debit_card", "other"],
-            },
-            occurredAt: { type: "string", format: "date-time" },
-            notes: { type: "string", maxLength: 500 },
-          },
+        body: { $ref: "CreateServiceRecordInput#" },
+        response: {
+          201: { $ref: "ServiceRecord#" },
+          400: { $ref: "ErrorResponse#" },
+          404: { $ref: "ErrorResponse#" },
         },
       },
     },
