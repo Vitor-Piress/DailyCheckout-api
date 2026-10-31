@@ -26,7 +26,20 @@ const listExpensesQuerySchema = z.object({
 });
 
 export async function expensesRoutes(app: FastifyInstance) {
-  app.get<{ Querystring: unknown }>("/expenses", async (request, reply) => {
+  app.get<{ Querystring: unknown }>(
+    "/expenses",
+    {
+      schema: {
+        tags: ["expenses"],
+        summary: "Lista as despesas de um dia",
+        querystring: {
+          type: "object",
+          required: ["date"],
+          properties: { date: { type: "string", format: "date" } },
+        },
+      },
+    },
+    async (request, reply) => {
     const parsedQuery = listExpensesQuerySchema.safeParse(request.query);
 
     if (!parsedQuery.success) {
@@ -56,16 +69,41 @@ export async function expensesRoutes(app: FastifyInstance) {
         ),
       )
       .orderBy(expenses.occurredAt);
-  });
+    },
+  );
 
-  app.post<{ Body: unknown }>("/expenses", async (request, reply) => {
+  app.post<{ Body: unknown }>(
+    "/expenses",
+    {
+      schema: {
+        tags: ["expenses"],
+        summary: "Registra uma despesa",
+        body: {
+          type: "object",
+          required: ["description", "amountCents", "paymentMethod"],
+          properties: {
+            description: { type: "string", maxLength: 200 },
+            amountCents: { type: "integer", minimum: 1 },
+            category: { type: "string", maxLength: 100 },
+            paymentMethod: {
+              type: "string",
+              enum: ["cash", "pix", "credit_card", "debit_card", "other"],
+            },
+            occurredAt: { type: "string", format: "date-time" },
+            notes: { type: "string", maxLength: 500 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
     const parsedBody = createExpenseSchema.safeParse(request.body);
 
     if (!parsedBody.success) {
       return reply.code(400).send({
         error: "Dados inválidos.",
         details: parsedBody.error.issues,
-      });
+        },
+      );
     }
 
     const { description, amountCents, category, paymentMethod, occurredAt, notes } =

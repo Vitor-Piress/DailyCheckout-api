@@ -22,7 +22,20 @@ const listServiceRecordsQuerySchema = z.object({
 });
 
 export async function serviceRecordsRoutes(app: FastifyInstance) {
-  app.get<{ Querystring: unknown }>("/service-records", async (request, reply) => {
+  app.get<{ Querystring: unknown }>(
+    "/service-records",
+    {
+      schema: {
+        tags: ["service-records"],
+        summary: "Lista os atendimentos de um dia",
+        querystring: {
+          type: "object",
+          required: ["date"],
+          properties: { date: { type: "string", format: "date" } },
+        },
+      },
+    },
+    async (request, reply) => {
     const parsedQuery = listServiceRecordsQuerySchema.safeParse(request.query);
 
     if (!parsedQuery.success) {
@@ -53,16 +66,39 @@ export async function serviceRecordsRoutes(app: FastifyInstance) {
         ),
       )
       .orderBy(serviceRecords.occurredAt);
-  });
+    },
+  );
 
-  app.post<{ Body: unknown }>("/service-records", async (request, reply) => {
+  app.post<{ Body: unknown }>(
+    "/service-records",
+    {
+      schema: {
+        tags: ["service-records"],
+        summary: "Registra um atendimento",
+        body: {
+          type: "object",
+          required: ["serviceTypeId", "paymentMethod"],
+          properties: {
+            serviceTypeId: { type: "string", format: "uuid" },
+            paymentMethod: {
+              type: "string",
+              enum: ["cash", "pix", "credit_card", "debit_card", "other"],
+            },
+            occurredAt: { type: "string", format: "date-time" },
+            notes: { type: "string", maxLength: 500 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
     const parsedBody = createServiceRecordSchema.safeParse(request.body);
 
     if (!parsedBody.success) {
       return reply.code(400).send({
         error: "Dados inválidos.",
         details: parsedBody.error.issues,
-      });
+        },
+      );
     }
 
     const { serviceTypeId, paymentMethod, occurredAt, notes } = parsedBody.data;

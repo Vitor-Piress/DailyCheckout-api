@@ -51,14 +51,28 @@ function getPeriodBounds(period: z.infer<typeof periodicReportQuerySchema>["peri
 }
 
 export async function reportsRoutes(app: FastifyInstance) {
-  app.get<{ Querystring: unknown }>("/reports/daily", async (request, reply) => {
+  app.get<{ Querystring: unknown }>(
+    "/reports/daily",
+    {
+      schema: {
+        tags: ["reports"],
+        summary: "Gera o relatório de atendimentos de um dia",
+        querystring: {
+          type: "object",
+          required: ["date"],
+          properties: { date: { type: "string", format: "date" } },
+        },
+      },
+    },
+    async (request, reply) => {
     const parsedQuery = dailyReportQuerySchema.safeParse(request.query);
 
     if (!parsedQuery.success) {
       return reply.code(400).send({
         error: "Informe uma data válida no formato YYYY-MM-DD.",
         details: parsedQuery.error.issues,
-      });
+        },
+      );
     }
 
     const { date } = parsedQuery.data;
@@ -115,6 +129,23 @@ export async function reportsRoutes(app: FastifyInstance) {
 
   app.get<{ Querystring: unknown }>(
     "/reports/periodic",
+    {
+      schema: {
+        tags: ["reports"],
+        summary: "Gera relatório financeiro mensal, trimestral, semestral ou anual",
+        querystring: {
+          type: "object",
+          required: ["period", "date"],
+          properties: {
+            period: {
+              type: "string",
+              enum: ["month", "quarter", "semester", "year"],
+            },
+            date: { type: "string", format: "date" },
+          },
+        },
+      },
+    },
     async (request, reply) => {
         const parsedQuery = periodicReportQuerySchema.safeParse(request.query);
 

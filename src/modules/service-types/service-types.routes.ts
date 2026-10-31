@@ -4,7 +4,29 @@ import { db } from "../../db/client.js";
 import { serviceTypes } from "../../db/schema.js";
 
 export async function serviceTypesRoutes(app: FastifyInstance) {
-  app.get("/service-types", async () => {
+  app.get(
+    "/service-types",
+    {
+      schema: {
+        tags: ["service-types"],
+        summary: "Lista os serviços ativos",
+        response: {
+          200: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string", format: "uuid" },
+                name: { type: "string" },
+                description: { type: ["string", "null"] },
+                priceCents: { type: "integer", minimum: 0 },
+              },
+            },
+          },
+        },
+      },
+    },
+    async () => {
     return db
       .select({
         id: serviceTypes.id,
@@ -15,5 +37,6 @@ export async function serviceTypesRoutes(app: FastifyInstance) {
       .from(serviceTypes)
       .where(eq(serviceTypes.active, true))
       .orderBy(asc(serviceTypes.name));
-  });
+    },
+  );
 }

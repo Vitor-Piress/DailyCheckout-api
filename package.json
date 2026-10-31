@@ -8,6 +8,7 @@
     "build": "tsc --noEmit false",
     "dev": "tsx watch src/server.ts",
     "start": "node dist/src/server.js",
+    "start:prod": "npm run build && npm start",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx scripts/seed.ts"
@@ -19,6 +20,9 @@
   ],
   "license": "ISC",
   "dependencies": {
+    "@fastify/cors": "^11.3.1",
+    "@fastify/swagger": "^9.9.2",
+    "@fastify/swagger-ui": "^6.1.2",
     "@neon/config": "^1.10.0",
     "@neon/env": "^1.6.8",
     "dotenv": "^18.0.9",
