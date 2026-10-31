@@ -64,7 +64,7 @@ Preencha `DATABASE_URL` com a URL de conexão do PostgreSQL. Para executar migra
 | `DATABASE_URL_UNPOOLED` | Para migrations | URL de conexão direta usada pelo Drizzle Kit               |
 | `PORT`                  |             Não | Porta HTTP; padrão `3333`                                  |
 | `HOST`                  |             Não | Host de escuta; padrão `0.0.0.0`                           |
-| `CORS_ORIGIN`           |             Não | Origem permitida pelo CORS; padrão `http://localhost:5173` |
+| `CORS_ORIGIN`           |             Não | Origens permitidas pelo CORS, separadas por vírgula; padrão `http://localhost:5173` |
 
 No Neon, use a conexão pooled em `DATABASE_URL` para o tráfego normal da aplicação e a conexão direta em `DATABASE_URL_UNPOOLED` para migrations.
 
@@ -316,16 +316,16 @@ DATABASE_URL_UNPOOLED
 CORS_ORIGIN
 ```
 
-`CORS_ORIGIN` deve ser a origem exata do frontend. Durante o desenvolvimento local:
+`CORS_ORIGIN` deve conter as origens exatas dos frontends, separadas por vírgula:
 
 ```text
-http://localhost:5173
+http://localhost:5173,https://dailycheckout.pages.dev
 ```
 
-Depois de publicar o frontend no Cloudflare Pages, substitua pelo domínio público do frontend, por exemplo:
+Durante o desenvolvimento local, o primeiro endereço permite requisições do frontend local. Em produção, configure a mesma variável no Render com:
 
 ```text
-https://dailycheckout.pages.dev
+http://localhost:5173,https://dailycheckout.pages.dev
 ```
 
 As migrations não são executadas automaticamente pelo `render.yaml`. Aplique-as conscientemente antes ou durante a preparação do ambiente de produção:
