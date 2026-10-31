@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db/client.js";
 import { serviceRecords, serviceTypes } from "../../db/schema.js";
@@ -17,7 +17,44 @@ const createServiceRecordSchema = z.object({
   notes: z.string().trim().max(500).optional(),
 });
 
+const listServiceRecordsQuerySchema = z.object({
+  date: z.iso.date(),
+});
+
 export async function serviceRecordsRoutes(app: FastifyInstance) {
+  app.get<{ Querystring: unknown }>("/service-records", async (request, reply) => {
+    const parsedQuery = listServiceRecordsQuerySchema.safeParse(request.query);
+
+    if (!parsedQuery.success) {
+      return reply.code(400).send({
+        error: "Informe uma data válida no formato YYYY-MM-DD.",
+        details: parsedQuery.error.issues,
+      });
+    }
+
+    const { date } = parsedQuery.data;
+    return db
+      .select({
+        id: serviceRecords.id,
+        serviceTypeId: serviceRecords.serviceTypeId,
+        serviceName: serviceTypes.name,
+        priceCents: serviceRecords.priceCents,
+        paymentMethod: serviceRecords.paymentMethod,
+        occurredAt: serviceRecords.occurredAt,
+        notes: serviceRecords.notes,
+        createdAt: serviceRecords.createdAt,
+      })
+      .from(serviceRecords)
+      .innerJoin(serviceTypes, eq(serviceRecords.serviceTypeId, serviceTypes.id))
+      .where(
+        and(
+          sql`(${serviceRecords.occurredAt} AT TIME ZONE 'America/Sao_Paulo')::date = ${date}::date`,
+          isNull(serviceRecords.canceledAt),
+        ),
+      )
+      .orderBy(serviceRecords.occurredAt);
+  });
+
   app.post<{ Body: unknown }>("/service-records", async (request, reply) => {
     const parsedBody = createServiceRecordSchema.safeParse(request.body);
 
