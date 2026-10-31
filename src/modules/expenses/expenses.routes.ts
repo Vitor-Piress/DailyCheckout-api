@@ -132,6 +132,7 @@ export async function expensesRoutes(app: FastifyInstance) {
         category: category || null,
         paymentMethod,
         occurredAt: occurredAt ? new Date(occurredAt) : undefined,
+        createdBy: request.currentUser.id,
         notes: notes || null,
       })
       .returning({

@@ -333,6 +333,14 @@ CORS_ORIGIN
 http://localhost:5173,https://dailycheckout.pages.dev
 ```
 
+Com o Neon Auth habilitado, configure também `NEON_AUTH_BASE_URL` e
+`NEON_AUTH_JWKS_URL`. Essas variáveis são preenchidas pelo Neon com
+`neon env pull` e não devem conter credenciais no repositório.
+
+As rotas de negócio exigem `Authorization: Bearer <token>` emitido pelo Neon
+Auth. O perfil `admin` pode acessar relatórios periódicos; o perfil
+`daily_operator` fica restrito ao acompanhamento diário e aos lançamentos.
+
 Durante o desenvolvimento local, o primeiro endereço permite requisições do frontend local. Em produção, configure a mesma variável no Render com:
 
 ```text
