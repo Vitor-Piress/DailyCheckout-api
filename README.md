@@ -41,7 +41,7 @@ Autenticação, clientes, planos, fidelidade e permissões ainda não fazem part
 Clone o repositório e instale as dependências:
 
 ```bash
-git clone <URL_DO_REPOSITORIO>
+git clone <https://github.com/Vitor-Piress/DailyCheckout-api.git>
 cd dailycheckout-api
 npm ci
 ```
@@ -58,13 +58,13 @@ Preencha `DATABASE_URL` com a URL de conexão do PostgreSQL. Para executar migra
 
 ### Variáveis de ambiente
 
-| Variável | Obrigatória | Descrição |
-|---|---:|---|
-| `DATABASE_URL` | Sim | URL de conexão usada pela API em produção |
-| `DATABASE_URL_UNPOOLED` | Para migrations | URL de conexão direta usada pelo Drizzle Kit |
-| `PORT` | Não | Porta HTTP; padrão `3333` |
-| `HOST` | Não | Host de escuta; padrão `0.0.0.0` |
-| `CORS_ORIGIN` | Não | Origem permitida pelo CORS; padrão `http://localhost:5173` |
+| Variável                |     Obrigatória | Descrição                                                  |
+| ----------------------- | --------------: | ---------------------------------------------------------- |
+| `DATABASE_URL`          |             Sim | URL de conexão usada pela API em produção                  |
+| `DATABASE_URL_UNPOOLED` | Para migrations | URL de conexão direta usada pelo Drizzle Kit               |
+| `PORT`                  |             Não | Porta HTTP; padrão `3333`                                  |
+| `HOST`                  |             Não | Host de escuta; padrão `0.0.0.0`                           |
+| `CORS_ORIGIN`           |             Não | Origem permitida pelo CORS; padrão `http://localhost:5173` |
 
 No Neon, use a conexão pooled em `DATABASE_URL` para o tráfego normal da aplicação e a conexão direta em `DATABASE_URL_UNPOOLED` para migrations.
 
