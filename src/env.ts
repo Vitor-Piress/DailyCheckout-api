@@ -12,6 +12,8 @@ const envSchema = z.object({
     .default("http://localhost:5173")
     .transform((value) => value.split(",").map((origin) => origin.trim()))
     .pipe(z.array(z.string().url())),
+  NEON_AUTH_BASE_URL: z.string().url().optional(),
+  NEON_AUTH_JWKS_URL: z.string().url().optional(),
 });
 
 export const env = envSchema.parse({
@@ -19,4 +21,6 @@ export const env = envSchema.parse({
   PORT: process.env.PORT,
   HOST: process.env.HOST,
   CORS_ORIGIN: process.env.CORS_ORIGIN,
+  NEON_AUTH_BASE_URL: process.env.NEON_AUTH_BASE_URL,
+  NEON_AUTH_JWKS_URL: process.env.NEON_AUTH_JWKS_URL,
 });

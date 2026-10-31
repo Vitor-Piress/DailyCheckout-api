@@ -9,10 +9,33 @@ import { expensesRoutes } from "./modules/expenses/expenses.routes.js";
 import { reportsRoutes } from "./modules/reports/reports.routes.js";
 import { env } from "./env.js";
 import { registerSchemas } from "./docs/schemas.js";
+import { authenticateRequest } from "./auth.js";
 
 export async function buildApp() {
   const app = Fastify({
     logger: true,
+  });
+
+  app.addHook("onRequest", async (request, reply) => {
+    if (
+      request.url === "/health" ||
+      request.url === "/health/db" ||
+      request.url.startsWith("/docs")
+    ) {
+      return;
+    }
+
+    const result = await authenticateRequest(request.headers.authorization);
+    if ("statusCode" in result) {
+      return reply.code(result.statusCode).send({ error: result.error });
+    }
+    request.currentUser = result;
+
+    if (request.url.startsWith("/reports/periodic") && result.role !== "admin") {
+      return reply.code(403).send({
+        error: "Acesso restrito ao perfil administrador.",
+      });
+    }
   });
 
   await app.register(cors, {

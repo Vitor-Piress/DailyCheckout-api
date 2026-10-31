@@ -123,6 +123,7 @@ export async function serviceRecordsRoutes(app: FastifyInstance) {
         priceCents: serviceType.priceCents,
         paymentMethod,
         occurredAt: occurredAt ? new Date(occurredAt) : undefined,
+        createdBy: request.currentUser.id,
         notes: notes || null,
       })
       .returning({

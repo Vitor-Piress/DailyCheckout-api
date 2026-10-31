@@ -20,6 +20,31 @@ export const paymentMethodEnum = pgEnum("payment_method", [
   "other",
 ]);
 
+export const appUserRoleEnum = pgEnum("app_user_role", [
+  "admin",
+  "daily_operator",
+]);
+
+export const appUsers = pgTable(
+  "app_users",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    authUserId: varchar("auth_user_id", { length: 255 }).notNull(),
+    name: varchar("name", { length: 120 }).notNull(),
+    role: appUserRoleEnum("role").notNull(),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("app_users_auth_user_id_unique").on(table.authUserId),
+  ],
+);
+
 export const serviceTypes = pgTable(
   "service_types",
   {
@@ -48,6 +73,9 @@ export const serviceRecords = pgTable(
     serviceTypeId: uuid("service_type_id")
       .notNull()
       .references(() => serviceTypes.id, { onDelete: "restrict" }),
+    createdBy: uuid("created_by").references(() => appUsers.id, {
+      onDelete: "restrict",
+    }),
     priceCents: integer("price_cents").notNull(),
     paymentMethod: paymentMethodEnum("payment_method").notNull(),
     occurredAt: timestamp("occurred_at", { withTimezone: true })
@@ -73,6 +101,9 @@ export const expenses = pgTable(
     amountCents: integer("amount_cents").notNull(),
     category: varchar("category", { length: 100 }),
     paymentMethod: paymentMethodEnum("payment_method").notNull(),
+    createdBy: uuid("created_by").references(() => appUsers.id, {
+      onDelete: "restrict",
+    }),
     occurredAt: timestamp("occurred_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
