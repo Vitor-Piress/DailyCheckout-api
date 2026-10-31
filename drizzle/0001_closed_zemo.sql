@@ -1,0 +1,1 @@
+ALTER TABLE "service_types" ADD CONSTRAINT "service_types_name_unique" UNIQUE("name");

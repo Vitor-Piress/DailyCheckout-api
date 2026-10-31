@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import { checkDatabaseConnection } from "./db/client.js";
+import { serviceTypesRoutes } from "./modules/service-types/service-types.routes.js";
 
 export function buildApp() {
   const app = Fastify({
@@ -14,6 +15,8 @@ export function buildApp() {
     await checkDatabaseConnection();
     return { status: "ok", database: "ok" };
   });
+
+  app.register(serviceTypesRoutes);
 
   return app;
 }
