@@ -227,6 +227,17 @@ Listar despesas de um dia:
 GET /expenses?date=2026-10-31
 ```
 
+Listar todas as despesas de um mês:
+
+```http
+GET /expenses?month=2026-10
+```
+
+O endpoint aceita exatamente um dos filtros: `date` para um único dia ou
+`month` para todo o mês de referência. O filtro mensal inclui do primeiro ao
+último dia do mês, considera o fuso `America/Sao_Paulo` e exclui despesas
+canceladas.
+
 As despesas são lançadas individualmente, mas não entram no relatório diário. Elas são consolidadas apenas nos relatórios periódicos.
 
 ### Relatório diário

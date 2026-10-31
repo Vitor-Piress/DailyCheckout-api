@@ -22,8 +22,15 @@ const createExpenseSchema = z.object({
 });
 
 const listExpensesQuerySchema = z.object({
-  date: z.iso.date(),
-});
+  date: z.iso.date().optional(),
+  month: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Use o formato YYYY-MM.")
+    .optional(),
+}).refine(
+  ({ date, month }) => (date !== undefined) !== (month !== undefined),
+  "Informe exatamente um filtro: date ou month.",
+);
 
 export async function expensesRoutes(app: FastifyInstance) {
   app.get<{ Querystring: unknown }>(
@@ -31,11 +38,13 @@ export async function expensesRoutes(app: FastifyInstance) {
     {
       schema: {
         tags: ["expenses"],
-        summary: "Lista as despesas de um dia",
+        summary: "Lista despesas por dia ou mês",
         querystring: {
           type: "object",
-          required: ["date"],
-          properties: { date: { type: "string", format: "date" } },
+          properties: {
+            date: { type: "string", format: "date" },
+            month: { type: "string", pattern: "^\\d{4}-(0[1-9]|1[0-2])$" },
+          },
         },
         response: {
           200: { type: "array", items: { $ref: "Expense#" } },
@@ -48,12 +57,25 @@ export async function expensesRoutes(app: FastifyInstance) {
 
     if (!parsedQuery.success) {
       return reply.code(400).send({
-        error: "Informe uma data válida no formato YYYY-MM-DD.",
+        error: "Informe exatamente um filtro válido: date=YYYY-MM-DD ou month=YYYY-MM.",
         details: parsedQuery.error.issues,
       });
     }
 
-    const { date } = parsedQuery.data;
+    const { date, month } = parsedQuery.data;
+    const dateFilter = date
+      ? sql`(${expenses.occurredAt} AT TIME ZONE 'America/Sao_Paulo')::date = ${date}::date`
+      : (() => {
+          const [year, monthNumber] = month!.split("-").map(Number);
+          const nextMonth =
+            monthNumber === 12
+              ? `${year + 1}-01-01`
+              : `${year}-${String(monthNumber + 1).padStart(2, "0")}-01`;
+
+          return sql`(${expenses.occurredAt} AT TIME ZONE 'America/Sao_Paulo') >= ${`${month}-01`}::date
+            and (${expenses.occurredAt} AT TIME ZONE 'America/Sao_Paulo') < ${nextMonth}::date`;
+        })();
+
     return db
       .select({
         id: expenses.id,
@@ -68,7 +90,7 @@ export async function expensesRoutes(app: FastifyInstance) {
       .from(expenses)
       .where(
         and(
-          sql`(${expenses.occurredAt} AT TIME ZONE 'America/Sao_Paulo')::date = ${date}::date`,
+          dateFilter,
           isNull(expenses.canceledAt),
         ),
       )
