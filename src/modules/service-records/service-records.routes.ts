@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db/client.js";
-import { serviceRecords, serviceTypes } from "../../db/schema.js";
+import { appUsers, serviceRecords, serviceTypes } from "../../db/schema.js";
 
 const createServiceRecordSchema = z.object({
   serviceTypeId: z.uuid(),
@@ -50,6 +50,11 @@ export async function serviceRecordsRoutes(app: FastifyInstance) {
     }
 
     const { date } = parsedQuery.data;
+    const authorFilter =
+      request.currentUser.role === "admin"
+        ? undefined
+        : eq(serviceRecords.createdBy, request.currentUser.id);
+
     return db
       .select({
         id: serviceRecords.id,
@@ -60,13 +65,20 @@ export async function serviceRecordsRoutes(app: FastifyInstance) {
         occurredAt: serviceRecords.occurredAt,
         notes: serviceRecords.notes,
         createdAt: serviceRecords.createdAt,
+        createdBy: {
+          id: appUsers.id,
+          name: appUsers.name,
+          role: appUsers.role,
+        },
       })
       .from(serviceRecords)
       .innerJoin(serviceTypes, eq(serviceRecords.serviceTypeId, serviceTypes.id))
+      .leftJoin(appUsers, eq(serviceRecords.createdBy, appUsers.id))
       .where(
         and(
           sql`(${serviceRecords.occurredAt} AT TIME ZONE 'America/Sao_Paulo')::date = ${date}::date`,
           isNull(serviceRecords.canceledAt),
+          authorFilter,
         ),
       )
       .orderBy(serviceRecords.occurredAt);
@@ -136,6 +148,13 @@ export async function serviceRecordsRoutes(app: FastifyInstance) {
         createdAt: serviceRecords.createdAt,
       });
 
-    return reply.code(201).send(serviceRecord);
+    return reply.code(201).send({
+      ...serviceRecord,
+      createdBy: {
+        id: request.currentUser.id,
+        name: request.currentUser.name,
+        role: request.currentUser.role,
+      },
+    });
   });
 }

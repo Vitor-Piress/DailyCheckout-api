@@ -3,7 +3,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import type { AnyColumn } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db/client.js";
-import { expenses, serviceRecords, serviceTypes } from "../../db/schema.js";
+import { appUsers, expenses, serviceRecords, serviceTypes } from "../../db/schema.js";
 
 const dailyReportQuerySchema = z.object({
   date: z.iso.date(),
@@ -80,6 +80,11 @@ export async function reportsRoutes(app: FastifyInstance) {
     }
 
     const { date } = parsedQuery.data;
+    const authorFilter =
+      request.currentUser.role === "admin"
+        ? undefined
+        : eq(serviceRecords.createdBy, request.currentUser.id);
+
     const [serviceRows, servicePaymentRows] = await Promise.all([
       db
         .select({
@@ -94,6 +99,7 @@ export async function reportsRoutes(app: FastifyInstance) {
           and(
             dateFilter(serviceRecords.occurredAt, date),
             isNull(serviceRecords.canceledAt),
+            authorFilter,
           ),
         )
         .groupBy(serviceTypes.id, serviceTypes.name)
@@ -109,6 +115,7 @@ export async function reportsRoutes(app: FastifyInstance) {
           and(
             dateFilter(serviceRecords.occurredAt, date),
             isNull(serviceRecords.canceledAt),
+            authorFilter,
           ),
         )
         .groupBy(serviceRecords.paymentMethod)

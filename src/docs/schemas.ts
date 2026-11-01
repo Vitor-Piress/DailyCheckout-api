@@ -38,6 +38,16 @@ export async function registerSchemas(app: FastifyInstance) {
     required: ["serviceTypeId", "paymentMethod"],
   });
   await app.addSchema({
+    $id: "ServiceRecordAuthor",
+    type: "object",
+    properties: {
+      id: { type: "string", format: "uuid" },
+      name: { type: "string" },
+      role: { type: "string", enum: ["admin", "daily_operator"] },
+    },
+    required: ["id", "name", "role"],
+  });
+  await app.addSchema({
     $id: "ServiceRecord",
     type: "object",
     properties: {
@@ -49,6 +59,7 @@ export async function registerSchemas(app: FastifyInstance) {
       occurredAt: { type: "string", format: "date-time" },
       notes: { type: ["string", "null"] },
       createdAt: { type: "string", format: "date-time" },
+      createdBy: { anyOf: [{ $ref: "ServiceRecordAuthor#" }, { type: "null" }] },
     },
     required: [
       "id",
@@ -57,6 +68,7 @@ export async function registerSchemas(app: FastifyInstance) {
       "paymentMethod",
       "occurredAt",
       "createdAt",
+      "createdBy",
     ],
   });
   await app.addSchema({

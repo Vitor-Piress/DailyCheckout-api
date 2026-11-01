@@ -40,6 +40,12 @@ export async function buildApp() {
         error: "Acesso restrito ao perfil administrador.",
       });
     }
+
+    if (request.url.startsWith("/expenses") && result.role !== "admin") {
+      return reply.code(403).send({
+        error: "Acesso às despesas restrito ao perfil administrador.",
+      });
+    }
   });
 
   await app.register(cors, {
@@ -57,6 +63,7 @@ export async function buildApp() {
         version: "1.0.0",
       },
       tags: [
+        { name: "auth", description: "Informações do usuário autenticado." },
         { name: "health", description: "Verificação da API e do banco." },
         { name: "service-types", description: "Catálogo de serviços." },
         { name: "service-records", description: "Atendimentos realizados." },
@@ -69,6 +76,29 @@ export async function buildApp() {
     routePrefix: "/docs",
   });
   await registerSchemas(app);
+
+  app.get(
+    "/me",
+    {
+      schema: {
+        tags: ["auth"],
+        summary: "Retorna o perfil do usuário autenticado",
+        response: {
+          200: {
+            type: "object",
+            required: ["id", "authUserId", "name", "role"],
+            properties: {
+              id: { type: "string", format: "uuid" },
+              authUserId: { type: "string" },
+              name: { type: "string" },
+              role: { type: "string", enum: ["admin", "daily_operator"] },
+            },
+          },
+        },
+      },
+    },
+    async (request) => request.currentUser,
+  );
 
   app.get(
     "/health",

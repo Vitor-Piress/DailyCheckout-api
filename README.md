@@ -200,6 +200,10 @@ Listar atendimentos de um dia:
 GET /service-records?date=2026-10-31
 ```
 
+Cada atendimento inclui o perfil que realizou o lançamento em `createdBy`.
+Administradores visualizam os lançamentos de todos os usuários; o perfil
+`daily_operator` visualiza somente os atendimentos criados por ele.
+
 ### Despesas
 
 Registrar uma despesa:
@@ -253,6 +257,10 @@ O relatório diário retorna:
 - resumo por serviço;
 - resumo por forma de pagamento.
 
+Os totais do relatório diário respeitam a mesma regra de autoria: o perfil
+`admin` visualiza todos os atendimentos e o perfil `daily_operator` visualiza
+somente os próprios lançamentos.
+
 ### Relatório periódico
 
 ```http
@@ -286,7 +294,7 @@ O intervalo considera o início inclusivo e o fim exclusivo do período.
 - O cancelamento é lógico; os dados não são apagados fisicamente.
 - Despesas não compõem o relatório diário.
 - Datas de negócio são interpretadas no fuso `America/Sao_Paulo`.
-- A API atualmente não possui autenticação; ela deve ser adicionada antes de expor operações administrativas em produção.
+- As rotas de negócio exigem autenticação; operações administrativas devem ser protegidas por um usuário com perfil `admin`.
 
 ## Estrutura do projeto
 
@@ -338,8 +346,9 @@ Com o Neon Auth habilitado, configure também `NEON_AUTH_BASE_URL` e
 `neon env pull` e não devem conter credenciais no repositório.
 
 As rotas de negócio exigem `Authorization: Bearer <token>` emitido pelo Neon
-Auth. O perfil `admin` pode acessar relatórios periódicos; o perfil
-`daily_operator` fica restrito ao acompanhamento diário e aos lançamentos.
+Auth. O perfil `admin` pode acessar relatórios periódicos e despesas. O
+perfil `daily_operator` fica restrito ao acompanhamento diário e aos
+lançamentos, sem acesso às despesas.
 
 Durante o desenvolvimento local, o primeiro endereço permite requisições do frontend local. Em produção, configure a mesma variável no Render com:
 
