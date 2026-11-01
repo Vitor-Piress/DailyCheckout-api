@@ -5,6 +5,59 @@ import { z } from "zod";
 import { db } from "../../db/client.js";
 import { appUsers, expenses, serviceRecords, serviceTypes } from "../../db/schema.js";
 
+type UserServiceSummaryRow = {
+  userId: string | null;
+  userName: string | null;
+  role: "admin" | "daily_operator" | null;
+  serviceTypeId: string;
+  serviceName: string;
+  quantity: number;
+  totalCents: number;
+};
+
+function buildUserSummaries(rows: UserServiceSummaryRow[]) {
+  const summaries = new Map<
+    string,
+    {
+      userId: string | null;
+      userName: string;
+      role: "admin" | "daily_operator" | null;
+      serviceCount: number;
+      grossRevenueCents: number;
+      services: Array<{
+        serviceTypeId: string;
+        serviceName: string;
+        quantity: number;
+        totalCents: number;
+      }>;
+    }
+  >();
+
+  for (const row of rows) {
+    const key = row.userId ?? "unknown";
+    const summary = summaries.get(key) ?? {
+      userId: row.userId,
+      userName: row.userName ?? "Autor não identificado",
+      role: row.role,
+      serviceCount: 0,
+      grossRevenueCents: 0,
+      services: [],
+    };
+
+    summary.serviceCount += row.quantity;
+    summary.grossRevenueCents += row.totalCents;
+    summary.services.push({
+      serviceTypeId: row.serviceTypeId,
+      serviceName: row.serviceName,
+      quantity: row.quantity,
+      totalCents: row.totalCents,
+    });
+    summaries.set(key, summary);
+  }
+
+  return [...summaries.values()];
+}
+
 const dailyReportQuerySchema = z.object({
   date: z.iso.date(),
 });
@@ -85,7 +138,7 @@ export async function reportsRoutes(app: FastifyInstance) {
         ? undefined
         : eq(serviceRecords.createdBy, request.currentUser.id);
 
-    const [serviceRows, servicePaymentRows] = await Promise.all([
+    const [serviceRows, servicePaymentRows, userServiceRows] = await Promise.all([
       db
         .select({
           serviceTypeId: serviceTypes.id,
@@ -120,6 +173,34 @@ export async function reportsRoutes(app: FastifyInstance) {
         )
         .groupBy(serviceRecords.paymentMethod)
         .orderBy(serviceRecords.paymentMethod),
+      db
+        .select({
+          userId: appUsers.id,
+          userName: appUsers.name,
+          role: appUsers.role,
+          serviceTypeId: serviceTypes.id,
+          serviceName: serviceTypes.name,
+          quantity: sql<number>`count(${serviceRecords.id})::int`,
+          totalCents: sql<number>`coalesce(sum(${serviceRecords.priceCents}), 0)::int`,
+        })
+        .from(serviceRecords)
+        .innerJoin(serviceTypes, eq(serviceRecords.serviceTypeId, serviceTypes.id))
+        .leftJoin(appUsers, eq(serviceRecords.createdBy, appUsers.id))
+        .where(
+          and(
+            dateFilter(serviceRecords.occurredAt, date),
+            isNull(serviceRecords.canceledAt),
+            authorFilter,
+          ),
+        )
+        .groupBy(
+          appUsers.id,
+          appUsers.name,
+          appUsers.role,
+          serviceTypes.id,
+          serviceTypes.name,
+        )
+        .orderBy(appUsers.name, serviceTypes.name),
     ]);
 
     const grossRevenueCents = serviceRows.reduce(
@@ -135,6 +216,7 @@ export async function reportsRoutes(app: FastifyInstance) {
         0,
       ),
       grossRevenueCents,
+      users: buildUserSummaries(userServiceRows),
     };
   });
 
@@ -173,7 +255,7 @@ export async function reportsRoutes(app: FastifyInstance) {
 
         const { period, date } = parsedQuery.data;
         const { startDate, endDate } = getPeriodBounds(period, date);
-        const [serviceSummary, expenseSummary, paymentSummary] =
+        const [serviceSummary, expenseSummary, paymentSummary, userServiceRows] =
           await Promise.all([
             db
               .select({
@@ -214,6 +296,33 @@ export async function reportsRoutes(app: FastifyInstance) {
               )
               .groupBy(expenses.paymentMethod)
               .orderBy(expenses.paymentMethod),
+            db
+              .select({
+                userId: appUsers.id,
+                userName: appUsers.name,
+                role: appUsers.role,
+                serviceTypeId: serviceTypes.id,
+                serviceName: serviceTypes.name,
+                quantity: sql<number>`count(${serviceRecords.id})::int`,
+                totalCents: sql<number>`coalesce(sum(${serviceRecords.priceCents}), 0)::int`,
+              })
+              .from(serviceRecords)
+              .innerJoin(serviceTypes, eq(serviceRecords.serviceTypeId, serviceTypes.id))
+              .leftJoin(appUsers, eq(serviceRecords.createdBy, appUsers.id))
+              .where(
+                and(
+                  periodFilter(serviceRecords.occurredAt, startDate, endDate),
+                  isNull(serviceRecords.canceledAt),
+                ),
+              )
+              .groupBy(
+                appUsers.id,
+                appUsers.name,
+                appUsers.role,
+                serviceTypes.id,
+                serviceTypes.name,
+              )
+              .orderBy(appUsers.name, serviceTypes.name),
           ]);
 
         const grossRevenueCents = serviceSummary[0]?.totalCents ?? 0;
@@ -229,6 +338,7 @@ export async function reportsRoutes(app: FastifyInstance) {
           expensesCents,
           netRevenueCents: grossRevenueCents - expensesCents,
           expensesByPaymentMethod: paymentSummary,
+          users: buildUserSummaries(userServiceRows),
         };
     },
   );

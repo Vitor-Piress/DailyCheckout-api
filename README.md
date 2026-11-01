@@ -261,6 +261,11 @@ Os totais do relatório diário respeitam a mesma regra de autoria: o perfil
 `admin` visualiza todos os atendimentos e o perfil `daily_operator` visualiza
 somente os próprios lançamentos.
 
+O campo `users` discrimina os atendimentos por usuário e tipo de serviço,
+incluindo `serviceCount`, `grossRevenueCents` e os serviços realizados por
+cada usuário. O relatório periódico retorna a mesma estrutura para todo o
+período. Registros antigos sem autor aparecem como `Autor não identificado`.
+
 ### Relatório periódico
 
 ```http

@@ -108,8 +108,47 @@ export async function registerSchemas(app: FastifyInstance) {
       paymentMethods: { type: "array", items: { $ref: "PaymentSummary#" } },
       serviceCount: { type: "integer" },
       grossRevenueCents: { type: "integer" },
+      users: { type: "array", items: { $ref: "UserReportSummary#" } },
     },
-    required: ["date", "services", "paymentMethods", "serviceCount", "grossRevenueCents"],
+    required: [
+      "date",
+      "services",
+      "paymentMethods",
+      "serviceCount",
+      "grossRevenueCents",
+      "users",
+    ],
+  });
+  await app.addSchema({
+    $id: "UserServiceSummary",
+    type: "object",
+    properties: {
+      serviceTypeId: { type: "string", format: "uuid" },
+      serviceName: { type: "string" },
+      quantity: { type: "integer", minimum: 0 },
+      totalCents: { type: "integer", minimum: 0 },
+    },
+    required: ["serviceTypeId", "serviceName", "quantity", "totalCents"],
+  });
+  await app.addSchema({
+    $id: "UserReportSummary",
+    type: "object",
+    properties: {
+      userId: { type: ["string", "null"], format: "uuid" },
+      userName: { type: "string" },
+      role: { type: ["string", "null"], enum: ["admin", "daily_operator", null] },
+      serviceCount: { type: "integer", minimum: 0 },
+      grossRevenueCents: { type: "integer", minimum: 0 },
+      services: { type: "array", items: { $ref: "UserServiceSummary#" } },
+    },
+    required: [
+      "userId",
+      "userName",
+      "role",
+      "serviceCount",
+      "grossRevenueCents",
+      "services",
+    ],
   });
   await app.addSchema({
     $id: "ServiceSummary",
@@ -148,6 +187,7 @@ export async function registerSchemas(app: FastifyInstance) {
         type: "array",
         items: { $ref: "PaymentSummary#" },
       },
+      users: { type: "array", items: { $ref: "UserReportSummary#" } },
     },
     required: [
       "period",
@@ -159,6 +199,7 @@ export async function registerSchemas(app: FastifyInstance) {
       "expensesCents",
       "netRevenueCents",
       "expensesByPaymentMethod",
+      "users",
     ],
   });
 }
