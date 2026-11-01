@@ -266,6 +266,31 @@ incluindo `serviceCount`, `grossRevenueCents` e os serviços realizados por
 cada usuário. O relatório periódico retorna a mesma estrutura para todo o
 período. Registros antigos sem autor aparecem como `Autor não identificado`.
 
+Para administradores, o relatório diário também inclui `settlement`, com o
+valor bruto dos atendimentos, a parte integral dos atendimentos próprios e a
+divisão de 50% dos atendimentos de cada `daily_operator`. Despesas não são
+descontadas. Valores são calculados em centavos; em valores ímpares, o
+centavo restante fica com o administrador.
+
+O fechamento diário persistido pode ser consultado e realizado somente por
+administradores:
+
+```http
+GET /settlements/daily?date=2026-10-31
+POST /settlements/daily/close
+```
+
+O corpo do fechamento é:
+
+```json
+{
+  "date": "2026-10-31"
+}
+```
+
+O fechamento é um snapshot histórico: depois de fechado, alterações
+posteriores nos atendimentos não alteram seus valores.
+
 ### Relatório periódico
 
 ```http

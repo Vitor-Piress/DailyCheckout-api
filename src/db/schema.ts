@@ -25,6 +25,11 @@ export const appUserRoleEnum = pgEnum("app_user_role", [
   "daily_operator",
 ]);
 
+export const settlementStatusEnum = pgEnum("settlement_status", [
+  "open",
+  "closed",
+]);
+
 export const appUsers = pgTable(
   "app_users",
   {
@@ -116,5 +121,66 @@ export const expenses = pgTable(
   },
   (table) => [
     check("expenses_amount_cents_positive", sql`${table.amountCents} > 0`),
+  ],
+);
+
+export const dailySettlements = pgTable(
+  "daily_settlements",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    settlementDate: timestamp("settlement_date", {
+      withTimezone: false,
+      mode: "string",
+    }).notNull(),
+    adminOwnServicesCents: integer("admin_own_services_cents").notNull(),
+    dailyOperatorsShareCents: integer("daily_operators_share_cents").notNull(),
+    adminDailyOperatorsShareCents: integer(
+      "admin_daily_operators_share_cents",
+    ).notNull(),
+    adminTotalDueCents: integer("admin_total_due_cents").notNull(),
+    dailyOperatorsTotalDueCents: integer(
+      "daily_operators_total_due_cents",
+    ).notNull(),
+    grossServicesCents: integer("gross_services_cents").notNull(),
+    status: settlementStatusEnum("status").notNull().default("closed"),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    closedBy: uuid("closed_by").references(() => appUsers.id, {
+      onDelete: "restrict",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("daily_settlements_date_unique").on(table.settlementDate),
+  ],
+);
+
+export const dailySettlementItems = pgTable(
+  "daily_settlement_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    settlementId: uuid("settlement_id")
+      .notNull()
+      .references(() => dailySettlements.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => appUsers.id, { onDelete: "restrict" }),
+    grossServicesCents: integer("gross_services_cents").notNull(),
+    operatorShareCents: integer("operator_share_cents").notNull(),
+    adminShareCents: integer("admin_share_cents").notNull(),
+    serviceCount: integer("service_count").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("daily_settlement_items_settlement_user_unique").on(
+      table.settlementId,
+      table.userId,
+    ),
   ],
 );

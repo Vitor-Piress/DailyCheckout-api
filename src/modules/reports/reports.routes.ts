@@ -4,6 +4,7 @@ import type { AnyColumn } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db/client.js";
 import { appUsers, expenses, serviceRecords, serviceTypes } from "../../db/schema.js";
+import { calculateDailySettlement } from "../settlements/settlements.service.js";
 
 type UserServiceSummaryRow = {
   userId: string | null;
@@ -227,6 +228,14 @@ export async function reportsRoutes(app: FastifyInstance) {
       (total, service) => total + service.totalCents,
       0,
     );
+    const settlement =
+      request.currentUser.role === "admin"
+        ? {
+            ...await calculateDailySettlement(date),
+            settlementStatus: "open" as const,
+          }
+        : null;
+
     return {
       date,
       services: serviceRows,
@@ -237,6 +246,7 @@ export async function reportsRoutes(app: FastifyInstance) {
       ),
       grossRevenueCents,
       users: buildUserSummaries(userServiceRows),
+      settlement,
     };
   });
 

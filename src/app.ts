@@ -7,6 +7,7 @@ import { serviceTypesRoutes } from "./modules/service-types/service-types.routes
 import { serviceRecordsRoutes } from "./modules/service-records/service-records.routes.js";
 import { expensesRoutes } from "./modules/expenses/expenses.routes.js";
 import { reportsRoutes } from "./modules/reports/reports.routes.js";
+import { settlementsRoutes } from "./modules/settlements/settlements.routes.js";
 import { env } from "./env.js";
 import { registerSchemas } from "./docs/schemas.js";
 import { authenticateRequest } from "./auth.js";
@@ -69,6 +70,7 @@ export async function buildApp() {
         { name: "service-records", description: "Atendimentos realizados." },
         { name: "expenses", description: "Despesas da barbearia." },
         { name: "reports", description: "Relatórios financeiros." },
+        { name: "settlements", description: "Fechamento financeiro diário." },
       ],
     },
   });
@@ -144,6 +146,7 @@ export async function buildApp() {
   app.register(serviceRecordsRoutes);
   app.register(expensesRoutes);
   app.register(reportsRoutes);
+  app.register(settlementsRoutes);
 
   return app;
 }

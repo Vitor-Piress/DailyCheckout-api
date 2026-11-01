@@ -109,6 +109,9 @@ export async function registerSchemas(app: FastifyInstance) {
       serviceCount: { type: "integer" },
       grossRevenueCents: { type: "integer" },
       users: { type: "array", items: { $ref: "UserReportSummary#" } },
+      settlement: {
+        anyOf: [{ $ref: "DailySettlementReport#" }, { type: "null" }],
+      },
     },
     required: [
       "date",
@@ -117,6 +120,7 @@ export async function registerSchemas(app: FastifyInstance) {
       "serviceCount",
       "grossRevenueCents",
       "users",
+      "settlement",
     ],
   });
   await app.addSchema({
@@ -203,6 +207,90 @@ export async function registerSchemas(app: FastifyInstance) {
       "netRevenueCents",
       "expensesByPaymentMethod",
       "users",
+    ],
+  });
+  await app.addSchema({
+    $id: "DailySettlementReport",
+    type: "object",
+    properties: {
+      adminOwnServicesCents: { type: "integer", minimum: 0 },
+      dailyOperatorsShareCents: { type: "integer", minimum: 0 },
+      adminDailyOperatorsShareCents: { type: "integer", minimum: 0 },
+      adminTotalDueCents: { type: "integer", minimum: 0 },
+      dailyOperatorsTotalDueCents: { type: "integer", minimum: 0 },
+      grossServicesCents: { type: "integer", minimum: 0 },
+      dailyOperators: {
+        type: "array",
+        items: { $ref: "DailySettlementOperator#" },
+      },
+      settlementStatus: { type: "string", enum: ["open"] },
+    },
+    required: [
+      "adminOwnServicesCents",
+      "dailyOperatorsShareCents",
+      "adminDailyOperatorsShareCents",
+      "adminTotalDueCents",
+      "dailyOperatorsTotalDueCents",
+      "grossServicesCents",
+      "dailyOperators",
+      "settlementStatus",
+    ],
+  });
+  await app.addSchema({
+    $id: "DailySettlementOperator",
+    type: "object",
+    properties: {
+      userId: { type: "string", format: "uuid" },
+      userName: { type: "string" },
+      grossServicesCents: { type: "integer", minimum: 0 },
+      operatorShareCents: { type: "integer", minimum: 0 },
+      adminShareCents: { type: "integer", minimum: 0 },
+      serviceCount: { type: "integer", minimum: 0 },
+    },
+    required: [
+      "userId",
+      "userName",
+      "grossServicesCents",
+      "operatorShareCents",
+      "adminShareCents",
+      "serviceCount",
+    ],
+  });
+  await app.addSchema({
+    $id: "DailySettlement",
+    type: "object",
+    properties: {
+      date: { type: "string", format: "date" },
+      status: { type: "string", enum: ["open", "closed"] },
+      closedAt: { type: ["string", "null"], format: "date-time" },
+      admin: {
+        type: "object",
+        properties: {
+          ownServicesCents: { type: "integer", minimum: 0 },
+          dailyOperatorsShareCents: { type: "integer", minimum: 0 },
+          totalDueCents: { type: "integer", minimum: 0 },
+        },
+        required: [
+          "ownServicesCents",
+          "dailyOperatorsShareCents",
+          "totalDueCents",
+        ],
+      },
+      dailyOperators: {
+        type: "array",
+        items: { $ref: "DailySettlementOperator#" },
+      },
+      grossServicesCents: { type: "integer", minimum: 0 },
+      dailyOperatorsTotalDueCents: { type: "integer", minimum: 0 },
+    },
+    required: [
+      "date",
+      "status",
+      "closedAt",
+      "admin",
+      "dailyOperators",
+      "grossServicesCents",
+      "dailyOperatorsTotalDueCents",
     ],
   });
 }
