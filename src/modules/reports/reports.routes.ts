@@ -63,7 +63,7 @@ const dailyReportQuerySchema = z.object({
 });
 
 const periodicReportQuerySchema = z.object({
-  period: z.enum(["month", "quarter", "semester", "year"]),
+  period: z.enum(["week", "month", "quarter", "semester", "year"]),
   date: z.iso.date(),
 });
 
@@ -74,8 +74,28 @@ const periodFilter = (column: AnyColumn, startDate: string, endDate: string) =>
   sql`(${column} AT TIME ZONE 'America/Sao_Paulo') >= ${startDate}::date
     and (${column} AT TIME ZONE 'America/Sao_Paulo') < ${endDate}::date`;
 
-function getPeriodBounds(period: z.infer<typeof periodicReportQuerySchema>["period"], date: string) {
+function getPeriodBounds(
+  period: z.infer<typeof periodicReportQuerySchema>["period"],
+  date: string,
+) {
   const [year, month] = date.split("-").map(Number);
+
+  if (period === "week") {
+    const referenceDate = new Date(Date.UTC(year, month - 1, Number(date.slice(8, 10))));
+    const dayOfWeek = referenceDate.getUTCDay();
+    const daysSinceMonday = (dayOfWeek + 6) % 7;
+    const startDate = new Date(referenceDate);
+    startDate.setUTCDate(referenceDate.getUTCDate() - daysSinceMonday);
+    const endDate = new Date(startDate);
+    endDate.setUTCDate(startDate.getUTCDate() + 7);
+    const formatDate = (value: Date) => value.toISOString().slice(0, 10);
+
+    return {
+      startDate: formatDate(startDate),
+      endDate: formatDate(endDate),
+    };
+  }
+
   const startMonth =
     period === "quarter"
       ? Math.floor((month - 1) / 3) * 3 + 1
@@ -225,14 +245,14 @@ export async function reportsRoutes(app: FastifyInstance) {
     {
       schema: {
         tags: ["reports"],
-        summary: "Gera relatório financeiro mensal, trimestral, semestral ou anual",
+        summary: "Gera relatório financeiro semanal, mensal, trimestral, semestral ou anual",
         querystring: {
           type: "object",
           required: ["period", "date"],
           properties: {
             period: {
               type: "string",
-              enum: ["month", "quarter", "semester", "year"],
+              enum: ["week", "month", "quarter", "semester", "year"],
             },
             date: { type: "string", format: "date" },
           },

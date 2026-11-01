@@ -175,7 +175,10 @@ export async function registerSchemas(app: FastifyInstance) {
     $id: "PeriodicReport",
     type: "object",
     properties: {
-      period: { type: "string", enum: ["month", "quarter", "semester", "year"] },
+      period: {
+        type: "string",
+        enum: ["week", "month", "quarter", "semester", "year"],
+      },
       startDate: { type: "string", format: "date" },
       endDate: { type: "string", format: "date" },
       serviceCount: { type: "integer" },

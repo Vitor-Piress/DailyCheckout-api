@@ -274,10 +274,15 @@ GET /reports/periodic?period=month&date=2026-10-31
 
 Valores aceitos para `period`:
 
+- `week` (semana de segunda-feira a domingo);
 - `month`;
 - `quarter`;
 - `semester`;
 - `year`.
+
+Para o relatório semanal, `date` pode ser qualquer data dentro da semana de
+referência. O intervalo retornado começa na segunda-feira e termina no início
+da segunda-feira seguinte, usando o fuso `America/Sao_Paulo`.
 
 O relatório periódico retorna:
 
