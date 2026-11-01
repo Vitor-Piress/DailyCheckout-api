@@ -29,6 +29,13 @@
       "when": 1793550351300,
       "tag": "0003_daily_settlements",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793550351301,
+      "tag": "0004_settlement_unidentified",
+      "breakpoints": true
     }
   ]
 }

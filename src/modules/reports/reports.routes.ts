@@ -4,7 +4,11 @@ import type { AnyColumn } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db/client.js";
 import { appUsers, expenses, serviceRecords, serviceTypes } from "../../db/schema.js";
-import { calculateDailySettlement } from "../settlements/settlements.service.js";
+import {
+  calculateDailySettlement,
+  calculatePeriodicSettlement,
+  getDailySettlement,
+} from "../settlements/settlements.service.js";
 
 type UserServiceSummaryRow = {
   userId: string | null;
@@ -124,6 +128,60 @@ function getPeriodBounds(
   };
 }
 
+async function buildDailySettlementReport(date: string) {
+  const [calculation, snapshot] = await Promise.all([
+    calculateDailySettlement(date),
+    getDailySettlement(date),
+  ]);
+  const calculatedAdminTotal = calculation.adminTotalDueCents;
+  const calculatedOperatorsTotal = calculation.dailyOperatorsTotalDueCents;
+  const closedSettlement = snapshot
+    ? {
+        settlementId: snapshot.settlementId,
+        date: snapshot.date,
+        status: snapshot.status,
+        closedAt: snapshot.closedAt,
+        closedBy: snapshot.closedBy,
+        admin: snapshot.admin,
+        dailyOperators: snapshot.dailyOperators,
+        grossServicesCents: snapshot.grossServicesCents,
+        dailyOperatorsTotalDueCents: snapshot.dailyOperatorsTotalDueCents,
+        unidentifiedServicesCents: snapshot.unidentifiedServicesCents,
+        unidentifiedServiceCount: snapshot.unidentifiedServiceCount,
+      }
+    : null;
+
+  return {
+    calculationStatus: snapshot ? "calculated" as const : "open" as const,
+    persistenceStatus: snapshot ? "closed" as const : "not_closed" as const,
+    admin: {
+      ownServicesCents: calculation.adminOwnServicesCents,
+      dailyOperatorsShareCents: calculation.adminDailyOperatorsShareCents,
+      totalDueCents: calculatedAdminTotal,
+    },
+    dailyOperators: calculation.dailyOperators,
+    grossServicesCents: calculation.grossServicesCents,
+    dailyOperatorsTotalDueCents: calculatedOperatorsTotal,
+    adminTotalDueCents: calculatedAdminTotal,
+    unidentifiedServicesCents: calculation.unidentifiedServicesCents,
+    unidentifiedServiceCount: calculation.unidentifiedServiceCount,
+    closedSettlement,
+    hasDifferenceFromCurrentCalculation: snapshot
+      ? calculatedAdminTotal !== snapshot.admin.totalDueCents ||
+        calculatedOperatorsTotal !== snapshot.dailyOperatorsTotalDueCents
+      : false,
+    differences: snapshot
+      ? {
+          adminTotalDueCents:
+            calculatedAdminTotal - snapshot.admin.totalDueCents,
+          dailyOperatorsTotalDueCents:
+            calculatedOperatorsTotal -
+            snapshot.dailyOperatorsTotalDueCents,
+        }
+      : null,
+  };
+}
+
 export async function reportsRoutes(app: FastifyInstance) {
   app.get<{ Querystring: unknown }>(
     "/reports/daily",
@@ -230,10 +288,7 @@ export async function reportsRoutes(app: FastifyInstance) {
     );
     const settlement =
       request.currentUser.role === "admin"
-        ? {
-            ...await calculateDailySettlement(date),
-            settlementStatus: "open" as const,
-          }
+        ? await buildDailySettlementReport(date)
         : null;
 
     return {
@@ -369,6 +424,10 @@ export async function reportsRoutes(app: FastifyInstance) {
           netRevenueCents: grossRevenueCents - expensesCents,
           expensesByPaymentMethod: paymentSummary,
           users: buildUserSummaries(userServiceRows),
+          settlement:
+            request.currentUser.role === "admin"
+              ? await calculatePeriodicSettlement(startDate, endDate)
+              : null,
         };
     },
   );

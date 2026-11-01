@@ -141,6 +141,12 @@ export const dailySettlements = pgTable(
     dailyOperatorsTotalDueCents: integer(
       "daily_operators_total_due_cents",
     ).notNull(),
+    unidentifiedServicesCents: integer("unidentified_services_cents")
+      .notNull()
+      .default(0),
+    unidentifiedServiceCount: integer("unidentified_service_count")
+      .notNull()
+      .default(0),
     grossServicesCents: integer("gross_services_cents").notNull(),
     status: settlementStatusEnum("status").notNull().default("closed"),
     closedAt: timestamp("closed_at", { withTimezone: true }),

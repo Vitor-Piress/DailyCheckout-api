@@ -291,6 +291,11 @@ O corpo do fechamento é:
 O fechamento é um snapshot histórico: depois de fechado, alterações
 posteriores nos atendimentos não alteram seus valores.
 
+Os relatórios diário e periódico também informam a situação financeira do
+fechamento para administradores. Períodos combinam snapshots dos dias
+fechados com apurações atuais dos dias ainda abertos; diferenças entre um
+snapshot e a apuração atual são sinalizadas sem alterar o histórico.
+
 ### Relatório periódico
 
 ```http

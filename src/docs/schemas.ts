@@ -110,7 +110,7 @@ export async function registerSchemas(app: FastifyInstance) {
       grossRevenueCents: { type: "integer" },
       users: { type: "array", items: { $ref: "UserReportSummary#" } },
       settlement: {
-        anyOf: [{ $ref: "DailySettlementReport#" }, { type: "null" }],
+        anyOf: [{ $ref: "DailyReportSettlement#" }, { type: "null" }],
       },
     },
     required: [
@@ -195,6 +195,9 @@ export async function registerSchemas(app: FastifyInstance) {
         items: { $ref: "PaymentSummary#" },
       },
       users: { type: "array", items: { $ref: "UserReportSummary#" } },
+      settlement: {
+        anyOf: [{ $ref: "PeriodicSettlement#" }, { type: "null" }],
+      },
     },
     required: [
       "period",
@@ -207,6 +210,132 @@ export async function registerSchemas(app: FastifyInstance) {
       "netRevenueCents",
       "expensesByPaymentMethod",
       "users",
+      "settlement",
+    ],
+  });
+  await app.addSchema({
+    $id: "PeriodicSettlement",
+    type: "object",
+    properties: {
+      periodStartDate: { type: "string", format: "date" },
+      periodEndDate: { type: "string", format: "date" },
+      calculationMode: {
+        type: "string",
+        enum: ["daily_snapshots_and_open_days"],
+      },
+      adminOwnServicesCents: { type: "integer", minimum: 0 },
+      dailyOperatorsGrossServicesCents: { type: "integer", minimum: 0 },
+      dailyOperatorsShareCents: { type: "integer", minimum: 0 },
+      adminDailyOperatorsShareCents: { type: "integer", minimum: 0 },
+      adminTotalDueCents: { type: "integer", minimum: 0 },
+      dailyOperatorsTotalDueCents: { type: "integer", minimum: 0 },
+      unidentifiedServicesCents: { type: "integer", minimum: 0 },
+      unidentifiedServiceCount: { type: "integer", minimum: 0 },
+      dailyOperators: {
+        type: "array",
+        items: { $ref: "DailySettlementOperator#" },
+      },
+      days: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            date: { type: "string", format: "date" },
+            status: { type: "string", enum: ["open", "closed"] },
+            adminTotalDueCents: { type: "integer", minimum: 0 },
+            dailyOperatorsTotalDueCents: { type: "integer", minimum: 0 },
+          },
+          required: [
+            "date",
+            "status",
+            "adminTotalDueCents",
+            "dailyOperatorsTotalDueCents",
+          ],
+        },
+      },
+      closedDaysCount: { type: "integer", minimum: 0 },
+      openDaysCount: { type: "integer", minimum: 0 },
+    },
+    required: [
+      "periodStartDate",
+      "periodEndDate",
+      "calculationMode",
+      "adminOwnServicesCents",
+      "dailyOperatorsGrossServicesCents",
+      "dailyOperatorsShareCents",
+      "adminDailyOperatorsShareCents",
+      "adminTotalDueCents",
+      "dailyOperatorsTotalDueCents",
+      "unidentifiedServicesCents",
+      "unidentifiedServiceCount",
+      "dailyOperators",
+      "days",
+      "closedDaysCount",
+      "openDaysCount",
+    ],
+  });
+  await app.addSchema({
+    $id: "DailyReportSettlement",
+    type: "object",
+    properties: {
+      calculationStatus: { type: "string", enum: ["open", "calculated"] },
+      persistenceStatus: { type: "string", enum: ["not_closed", "closed"] },
+      admin: {
+        type: "object",
+        properties: {
+          ownServicesCents: { type: "integer", minimum: 0 },
+          dailyOperatorsShareCents: { type: "integer", minimum: 0 },
+          totalDueCents: { type: "integer", minimum: 0 },
+        },
+        required: [
+          "ownServicesCents",
+          "dailyOperatorsShareCents",
+          "totalDueCents",
+        ],
+      },
+      dailyOperators: {
+        type: "array",
+        items: { $ref: "DailySettlementOperator#" },
+      },
+      grossServicesCents: { type: "integer", minimum: 0 },
+      dailyOperatorsTotalDueCents: { type: "integer", minimum: 0 },
+      adminTotalDueCents: { type: "integer", minimum: 0 },
+      unidentifiedServicesCents: { type: "integer", minimum: 0 },
+      unidentifiedServiceCount: { type: "integer", minimum: 0 },
+      closedSettlement: {
+        anyOf: [{ $ref: "DailySettlement#" }, { type: "null" }],
+      },
+      hasDifferenceFromCurrentCalculation: { type: "boolean" },
+      differences: {
+        anyOf: [
+          {
+            type: "object",
+            properties: {
+              adminTotalDueCents: { type: "integer" },
+              dailyOperatorsTotalDueCents: { type: "integer" },
+            },
+            required: [
+              "adminTotalDueCents",
+              "dailyOperatorsTotalDueCents",
+            ],
+          },
+          { type: "null" },
+        ],
+      },
+    },
+    required: [
+      "calculationStatus",
+      "persistenceStatus",
+      "admin",
+      "dailyOperators",
+      "grossServicesCents",
+      "dailyOperatorsTotalDueCents",
+      "adminTotalDueCents",
+      "unidentifiedServicesCents",
+      "unidentifiedServiceCount",
+      "closedSettlement",
+      "hasDifferenceFromCurrentCalculation",
+      "differences",
     ],
   });
   await app.addSchema({
@@ -282,6 +411,22 @@ export async function registerSchemas(app: FastifyInstance) {
       },
       grossServicesCents: { type: "integer", minimum: 0 },
       dailyOperatorsTotalDueCents: { type: "integer", minimum: 0 },
+      settlementId: { type: "string", format: "uuid" },
+      closedBy: {
+        anyOf: [
+          {
+            type: "object",
+            properties: {
+              userId: { type: "string", format: "uuid" },
+              userName: { type: "string" },
+            },
+            required: ["userId", "userName"],
+          },
+          { type: "null" },
+        ],
+      },
+      unidentifiedServicesCents: { type: "integer", minimum: 0 },
+      unidentifiedServiceCount: { type: "integer", minimum: 0 },
     },
     required: [
       "date",
@@ -291,6 +436,10 @@ export async function registerSchemas(app: FastifyInstance) {
       "dailyOperators",
       "grossServicesCents",
       "dailyOperatorsTotalDueCents",
+      "settlementId",
+      "closedBy",
+      "unidentifiedServicesCents",
+      "unidentifiedServiceCount",
     ],
   });
 }

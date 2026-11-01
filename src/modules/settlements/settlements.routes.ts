@@ -111,6 +111,8 @@ export async function settlementsRoutes(app: FastifyInstance) {
             dailyOperatorsTotalDueCents:
               calculation.dailyOperatorsTotalDueCents,
             grossServicesCents: calculation.grossServicesCents,
+            unidentifiedServicesCents: calculation.unidentifiedServicesCents,
+            unidentifiedServiceCount: calculation.unidentifiedServiceCount,
             status: "closed",
             closedAt: new Date(),
             closedBy: request.currentUser.id,
