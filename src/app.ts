@@ -17,6 +17,10 @@ export async function buildApp() {
   });
 
   app.addHook("onRequest", async (request, reply) => {
+    if (request.method === "OPTIONS") {
+      return;
+    }
+
     if (
       request.url === "/health" ||
       request.url === "/health/db" ||
