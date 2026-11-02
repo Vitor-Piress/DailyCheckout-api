@@ -11,7 +11,8 @@
     "start:prod": "npm run build && npm start",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:seed": "tsx scripts/seed.ts",
+    "users:link": "tsx scripts/link-user.ts"
   },
   "keywords": [
     "dailycheckout",
