@@ -3,6 +3,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db/client.js";
 import { appUsers, serviceRecords, serviceTypes } from "../../db/schema.js";
+import { calculateRoleRevenueSplit } from "../settlements/settlements.service.js";
 
 const createServiceRecordSchema = z.object({
   serviceTypeId: z.uuid(),
@@ -55,7 +56,7 @@ export async function serviceRecordsRoutes(app: FastifyInstance) {
         ? undefined
         : eq(serviceRecords.createdBy, request.currentUser.id);
 
-    return db
+    const rows = await db
       .select({
         id: serviceRecords.id,
         serviceTypeId: serviceRecords.serviceTypeId,
@@ -82,6 +83,18 @@ export async function serviceRecordsRoutes(app: FastifyInstance) {
         ),
       )
       .orderBy(serviceRecords.occurredAt);
+
+    return rows.map((row) => {
+      const split = calculateRoleRevenueSplit(
+        row.priceCents,
+        row.createdBy?.role ?? null,
+      );
+      return {
+        ...row,
+        operatorShareCents: split.operatorShareCents,
+        adminShareCents: split.adminShareCents,
+      };
+    });
     },
   );
 
@@ -114,6 +127,7 @@ export async function serviceRecordsRoutes(app: FastifyInstance) {
     const [serviceType] = await db
       .select({
         id: serviceTypes.id,
+        name: serviceTypes.name,
         priceCents: serviceTypes.priceCents,
       })
       .from(serviceTypes)
@@ -148,8 +162,16 @@ export async function serviceRecordsRoutes(app: FastifyInstance) {
         createdAt: serviceRecords.createdAt,
       });
 
+    const split = calculateRoleRevenueSplit(
+      serviceRecord.priceCents,
+      request.currentUser.role,
+    );
+
     return reply.code(201).send({
       ...serviceRecord,
+      serviceName: serviceType.name,
+      operatorShareCents: split.operatorShareCents,
+      adminShareCents: split.adminShareCents,
       createdBy: {
         id: request.currentUser.id,
         name: request.currentUser.name,

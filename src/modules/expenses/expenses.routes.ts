@@ -9,17 +9,20 @@ const paymentMethods = [
   "pix",
   "credit_card",
   "debit_card",
+  "boleto",
   "other",
 ] as const;
 
-const createExpenseSchema = z.object({
-  description: z.string().trim().min(1).max(200),
-  amountCents: z.number().int().positive(),
-  category: z.string().trim().min(1).max(100).optional(),
-  paymentMethod: z.enum(paymentMethods),
-  occurredAt: z.iso.datetime({ offset: true }).optional(),
-  notes: z.string().trim().max(500).optional(),
-});
+const createExpenseSchema = z
+  .object({
+    description: z.string().trim().min(1).max(200),
+    amountCents: z.number().int().positive(),
+    category: z.string().trim().min(1).max(100).optional(),
+    paymentMethod: z.enum(paymentMethods),
+    dueDate: z.iso.date(),
+    notes: z.string().trim().max(500).optional(),
+  })
+  .strict();
 
 const listExpensesQuerySchema = z.object({
   date: z.iso.date().optional(),
@@ -64,7 +67,7 @@ export async function expensesRoutes(app: FastifyInstance) {
 
     const { date, month } = parsedQuery.data;
     const dateFilter = date
-      ? sql`(${expenses.occurredAt} AT TIME ZONE 'America/Sao_Paulo')::date = ${date}::date`
+      ? sql`${expenses.dueDate} = ${date}::date`
       : (() => {
           const [year, monthNumber] = month!.split("-").map(Number);
           const nextMonth =
@@ -72,8 +75,8 @@ export async function expensesRoutes(app: FastifyInstance) {
               ? `${year + 1}-01-01`
               : `${year}-${String(monthNumber + 1).padStart(2, "0")}-01`;
 
-          return sql`(${expenses.occurredAt} AT TIME ZONE 'America/Sao_Paulo') >= ${`${month}-01`}::date
-            and (${expenses.occurredAt} AT TIME ZONE 'America/Sao_Paulo') < ${nextMonth}::date`;
+          return sql`${expenses.dueDate} >= ${`${month}-01`}::date
+            and ${expenses.dueDate} < ${nextMonth}::date`;
         })();
 
     return db
@@ -83,7 +86,7 @@ export async function expensesRoutes(app: FastifyInstance) {
         amountCents: expenses.amountCents,
         category: expenses.category,
         paymentMethod: expenses.paymentMethod,
-        occurredAt: expenses.occurredAt,
+        dueDate: expenses.dueDate,
         notes: expenses.notes,
         createdAt: expenses.createdAt,
       })
@@ -94,7 +97,7 @@ export async function expensesRoutes(app: FastifyInstance) {
           isNull(expenses.canceledAt),
         ),
       )
-      .orderBy(expenses.occurredAt);
+      .orderBy(expenses.dueDate, expenses.createdAt);
     },
   );
 
@@ -122,7 +125,7 @@ export async function expensesRoutes(app: FastifyInstance) {
       );
     }
 
-    const { description, amountCents, category, paymentMethod, occurredAt, notes } =
+    const { description, amountCents, category, paymentMethod, dueDate, notes } =
       parsedBody.data;
     const [expense] = await db
       .insert(expenses)
@@ -131,7 +134,7 @@ export async function expensesRoutes(app: FastifyInstance) {
         amountCents,
         category: category || null,
         paymentMethod,
-        occurredAt: occurredAt ? new Date(occurredAt) : undefined,
+        dueDate,
         createdBy: request.currentUser.id,
         notes: notes || null,
       })
@@ -141,7 +144,7 @@ export async function expensesRoutes(app: FastifyInstance) {
         amountCents: expenses.amountCents,
         category: expenses.category,
         paymentMethod: expenses.paymentMethod,
-        occurredAt: expenses.occurredAt,
+        dueDate: expenses.dueDate,
         notes: expenses.notes,
         createdAt: expenses.createdAt,
       });

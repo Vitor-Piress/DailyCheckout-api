@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../../db/client.js";
 import {
   appUsers,
@@ -6,6 +6,49 @@ import {
   dailySettlements,
   serviceRecords,
 } from "../../db/schema.js";
+
+export function calculateRoleRevenueSplit(
+  grossCents: number,
+  role: "admin" | "daily_operator" | null,
+) {
+  if (role === "daily_operator") {
+    const operatorShareCents = Math.floor(grossCents / 2);
+    return {
+      operatorShareCents,
+      adminShareCents: grossCents - operatorShareCents,
+    };
+  }
+
+  if (role === "admin") {
+    return {
+      operatorShareCents: 0,
+      adminShareCents: grossCents,
+    };
+  }
+
+  return {
+    operatorShareCents: 0,
+    adminShareCents: 0,
+  };
+}
+
+export type FlexibleOperatorExpenseItem = {
+  userId: string;
+  userName: string;
+  serviceCount: number;
+  grossServicesCents: number;
+  expenseCents: number;
+  adminShareCents: number;
+};
+
+export type FlexibleOperatorsExpense = {
+  totalCents: number;
+  grossServicesCents: number;
+  adminShareCents: number;
+  serviceCount: number;
+  isFlexible: true;
+  operators: FlexibleOperatorExpenseItem[];
+};
 
 type OperatorSettlement = {
   userId: string;
@@ -184,19 +227,145 @@ function addDays(date: string, days: number) {
   return value.toISOString().slice(0, 10);
 }
 
+export async function calculateLiveOperatorsExpense(
+  startDate: string,
+  endDate: string,
+): Promise<FlexibleOperatorsExpense> {
+  const rows = await db
+    .select({
+      serviceDate: sql<string>`(${serviceRecords.occurredAt} AT TIME ZONE 'America/Sao_Paulo')::date::text`,
+      userId: appUsers.id,
+      userName: appUsers.name,
+      serviceCount: sql<number>`count(${serviceRecords.id})::int`,
+      grossServicesCents: sql<number>`coalesce(sum(${serviceRecords.priceCents}), 0)::int`,
+    })
+    .from(serviceRecords)
+    .innerJoin(appUsers, eq(serviceRecords.createdBy, appUsers.id))
+    .where(
+      and(
+        sql`(${serviceRecords.occurredAt} AT TIME ZONE 'America/Sao_Paulo') >= ${startDate}::date`,
+        sql`(${serviceRecords.occurredAt} AT TIME ZONE 'America/Sao_Paulo') < ${endDate}::date`,
+        isNull(serviceRecords.canceledAt),
+        eq(appUsers.role, "daily_operator"),
+      ),
+    )
+    .groupBy(
+      sql`(${serviceRecords.occurredAt} AT TIME ZONE 'America/Sao_Paulo')::date`,
+      appUsers.id,
+      appUsers.name,
+    );
+
+  const byOperator = new Map<string, FlexibleOperatorExpenseItem>();
+
+  for (const row of rows) {
+    const split = calculateRoleRevenueSplit(
+      row.grossServicesCents,
+      "daily_operator",
+    );
+    const current = byOperator.get(row.userId) ?? {
+      userId: row.userId,
+      userName: row.userName,
+      serviceCount: 0,
+      grossServicesCents: 0,
+      expenseCents: 0,
+      adminShareCents: 0,
+    };
+
+    current.serviceCount += row.serviceCount;
+    current.grossServicesCents += row.grossServicesCents;
+    current.expenseCents += split.operatorShareCents;
+    current.adminShareCents += split.adminShareCents;
+    byOperator.set(row.userId, current);
+  }
+
+  const operators = [...byOperator.values()].sort((a, b) =>
+    a.userName.localeCompare(b.userName, "pt-BR"),
+  );
+
+  return {
+    totalCents: operators.reduce((sum, op) => sum + op.expenseCents, 0),
+    grossServicesCents: operators.reduce(
+      (sum, op) => sum + op.grossServicesCents,
+      0,
+    ),
+    adminShareCents: operators.reduce((sum, op) => sum + op.adminShareCents, 0),
+    serviceCount: operators.reduce((sum, op) => sum + op.serviceCount, 0),
+    isFlexible: true,
+    operators,
+  };
+}
+
 export async function calculatePeriodicSettlement(
   startDate: string,
   endDate: string,
 ): Promise<PeriodicSettlement> {
-  const snapshots = await db
-    .select()
-    .from(dailySettlements)
-    .where(
-      and(
-        sql`${dailySettlements.settlementDate} >= ${startDate}::date`,
-        sql`${dailySettlements.settlementDate} < ${endDate}::date`,
+  const [snapshots, liveRows] = await Promise.all([
+    db
+      .select()
+      .from(dailySettlements)
+      .where(
+        and(
+          sql`${dailySettlements.settlementDate} >= ${startDate}::date`,
+          sql`${dailySettlements.settlementDate} < ${endDate}::date`,
+        ),
       ),
-    );
+    db
+      .select({
+        serviceDate: sql<string>`(${serviceRecords.occurredAt} AT TIME ZONE 'America/Sao_Paulo')::date::text`,
+        userId: appUsers.id,
+        userName: appUsers.name,
+        role: appUsers.role,
+        serviceCount: sql<number>`count(${serviceRecords.id})::int`,
+        grossServicesCents: sql<number>`coalesce(sum(${serviceRecords.priceCents}), 0)::int`,
+      })
+      .from(serviceRecords)
+      .leftJoin(appUsers, eq(serviceRecords.createdBy, appUsers.id))
+      .where(
+        and(
+          sql`(${serviceRecords.occurredAt} AT TIME ZONE 'America/Sao_Paulo') >= ${startDate}::date`,
+          sql`(${serviceRecords.occurredAt} AT TIME ZONE 'America/Sao_Paulo') < ${endDate}::date`,
+          isNull(serviceRecords.canceledAt),
+        ),
+      )
+      .groupBy(
+        sql`(${serviceRecords.occurredAt} AT TIME ZONE 'America/Sao_Paulo')::date`,
+        appUsers.id,
+        appUsers.name,
+        appUsers.role,
+      ),
+  ]);
+
+  const snapshotIds = snapshots.map((snapshot) => snapshot.id);
+  const allSnapshotItems =
+    snapshotIds.length > 0
+      ? await db
+          .select({
+            settlementId: dailySettlementItems.settlementId,
+            userId: dailySettlementItems.userId,
+            userName: appUsers.name,
+            grossServicesCents: dailySettlementItems.grossServicesCents,
+            operatorShareCents: dailySettlementItems.operatorShareCents,
+            adminShareCents: dailySettlementItems.adminShareCents,
+            serviceCount: dailySettlementItems.serviceCount,
+          })
+          .from(dailySettlementItems)
+          .innerJoin(appUsers, eq(dailySettlementItems.userId, appUsers.id))
+          .where(inArray(dailySettlementItems.settlementId, snapshotIds))
+      : [];
+
+  const itemsBySettlementId = new Map<string, typeof allSnapshotItems>();
+  for (const item of allSnapshotItems) {
+    const list = itemsBySettlementId.get(item.settlementId) ?? [];
+    list.push(item);
+    itemsBySettlementId.set(item.settlementId, list);
+  }
+
+  const liveRowsByDate = new Map<string, typeof liveRows>();
+  for (const row of liveRows) {
+    const list = liveRowsByDate.get(row.serviceDate) ?? [];
+    list.push(row);
+    liveRowsByDate.set(row.serviceDate, list);
+  }
 
   const snapshotByDate = new Map(
     snapshots.map((snapshot) => [snapshot.settlementDate, snapshot]),
@@ -215,9 +384,6 @@ export async function calculatePeriodicSettlement(
   let date = startDate;
   while (date < endDate) {
     const snapshot = snapshotByDate.get(date);
-    const calculation = snapshot
-      ? null
-      : await calculateDailySettlement(date);
 
     if (snapshot) {
       closedDaysCount += 1;
@@ -234,18 +400,7 @@ export async function calculatePeriodicSettlement(
         dailyOperatorsTotalDueCents: snapshot.dailyOperatorsTotalDueCents,
       });
 
-      const items = await db
-        .select({
-          userId: dailySettlementItems.userId,
-          userName: appUsers.name,
-          grossServicesCents: dailySettlementItems.grossServicesCents,
-          operatorShareCents: dailySettlementItems.operatorShareCents,
-          adminShareCents: dailySettlementItems.adminShareCents,
-          serviceCount: dailySettlementItems.serviceCount,
-        })
-        .from(dailySettlementItems)
-        .innerJoin(appUsers, eq(dailySettlementItems.userId, appUsers.id))
-        .where(eq(dailySettlementItems.settlementId, snapshot.id));
+      const items = itemsBySettlementId.get(snapshot.id) ?? [];
       for (const item of items) {
         const current = aggregate.get(item.userId) ?? {
           userId: item.userId,
@@ -263,35 +418,56 @@ export async function calculatePeriodicSettlement(
       }
     } else {
       openDaysCount += 1;
-      adminOwnServicesCents += calculation!.adminOwnServicesCents;
-      dailyOperatorsGrossServicesCents += calculation!.dailyOperators
-        .reduce((total, item) => total + item.grossServicesCents, 0);
-      dailyOperatorsShareCents += calculation!.dailyOperatorsShareCents;
-      adminDailyOperatorsShareCents +=
-        calculation!.adminDailyOperatorsShareCents;
-      unidentifiedServicesCents += calculation!.unidentifiedServicesCents;
-      unidentifiedServiceCount += calculation!.unidentifiedServiceCount;
+      const dayRows = liveRowsByDate.get(date) ?? [];
+      let dayAdminOwnCents = 0;
+      let dayOperatorsShareCents = 0;
+      let dayAdminOperatorsShareCents = 0;
+      let dayUnidentifiedCents = 0;
+      let dayUnidentifiedCount = 0;
+
+      for (const row of dayRows) {
+        const gross = row.grossServicesCents;
+        if (row.role === "admin") {
+          dayAdminOwnCents += gross;
+          continue;
+        }
+        if (row.role === "daily_operator" && row.userId && row.userName) {
+          const split = calculateRoleRevenueSplit(gross, "daily_operator");
+          dayOperatorsShareCents += split.operatorShareCents;
+          dayAdminOperatorsShareCents += split.adminShareCents;
+
+          const current = aggregate.get(row.userId) ?? {
+            userId: row.userId,
+            userName: row.userName,
+            grossServicesCents: 0,
+            operatorShareCents: 0,
+            adminShareCents: 0,
+            serviceCount: 0,
+          };
+          current.grossServicesCents += gross;
+          current.operatorShareCents += split.operatorShareCents;
+          current.adminShareCents += split.adminShareCents;
+          current.serviceCount += row.serviceCount;
+          current.userName = row.userName;
+          aggregate.set(row.userId, current);
+          continue;
+        }
+
+        dayUnidentifiedCents += gross;
+        dayUnidentifiedCount += row.serviceCount;
+      }
+
+      adminOwnServicesCents += dayAdminOwnCents;
+      dailyOperatorsShareCents += dayOperatorsShareCents;
+      adminDailyOperatorsShareCents += dayAdminOperatorsShareCents;
+      unidentifiedServicesCents += dayUnidentifiedCents;
+      unidentifiedServiceCount += dayUnidentifiedCount;
       periodDays.push({
         date,
         status: "open",
-        adminTotalDueCents: calculation!.adminTotalDueCents,
-        dailyOperatorsTotalDueCents: calculation!.dailyOperatorsTotalDueCents,
+        adminTotalDueCents: dayAdminOwnCents + dayAdminOperatorsShareCents,
+        dailyOperatorsTotalDueCents: dayOperatorsShareCents,
       });
-      for (const item of calculation!.dailyOperators) {
-        const current = aggregate.get(item.userId) ?? {
-          ...item,
-          grossServicesCents: 0,
-          operatorShareCents: 0,
-          adminShareCents: 0,
-          serviceCount: 0,
-        };
-        current.grossServicesCents += item.grossServicesCents;
-        current.operatorShareCents += item.operatorShareCents;
-        current.adminShareCents += item.adminShareCents;
-        current.serviceCount += item.serviceCount;
-        current.userName = item.userName;
-        aggregate.set(item.userId, current);
-      }
     }
 
     date = addDays(date, 1);

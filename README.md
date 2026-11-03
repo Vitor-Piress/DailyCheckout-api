@@ -200,7 +200,7 @@ Listar atendimentos de um dia:
 GET /service-records?date=2026-10-31
 ```
 
-Cada atendimento inclui o perfil que realizou o lançamento em `createdBy`.
+Cada atendimento inclui o perfil que realizou o lançamento em `createdBy`, além da divisão financeira em centavos (`operatorShareCents` e `adminShareCents`, seguindo a regra 50%/50% para `daily_operator` e 100% para `admin`).
 Administradores visualizam os lançamentos de todos os usuários; o perfil
 `daily_operator` visualiza somente os atendimentos criados por ele.
 
@@ -220,26 +220,28 @@ Payload:
   "description": "Compra de produtos",
   "amountCents": 1000,
   "category": "Materiais",
-  "paymentMethod": "cash",
+  "paymentMethod": "boleto",
+  "dueDate": "2026-11-15",
   "notes": "Reposição do estoque"
 }
 ```
 
-Listar despesas de um dia:
+Para despesas, `paymentMethod` aceita `cash`, `pix`, `credit_card`, `debit_card`, `boleto` e `other`. A data de lançamento (`createdAt`) é registrada automaticamente pelo sistema, enquanto `dueDate` (`YYYY-MM-DD`) informa a data de vencimento/pagamento selecionada pelo usuário.
+
+Listar despesas por data de vencimento (dia):
 
 ```http
 GET /expenses?date=2026-10-31
 ```
 
-Listar todas as despesas de um mês:
+Listar todas as despesas com vencimento em um mês:
 
 ```http
 GET /expenses?month=2026-10
 ```
 
-O endpoint aceita exatamente um dos filtros: `date` para um único dia ou
-`month` para todo o mês de referência. O filtro mensal inclui do primeiro ao
-último dia do mês, considera o fuso `America/Sao_Paulo` e exclui despesas
+O endpoint aceita exatamente um dos filtros: `date` para um único dia de vencimento ou
+`month` para todo o mês de vencimento de referência, excluindo despesas
 canceladas.
 
 As despesas são lançadas individualmente, mas não entram no relatório diário. Elas são consolidadas apenas nos relatórios periódicos.
@@ -266,7 +268,9 @@ incluindo `serviceCount`, `grossRevenueCents` e os serviços realizados por
 cada usuário. O relatório periódico retorna a mesma estrutura para todo o
 período. Registros antigos sem autor aparecem como `Autor não identificado`.
 
-Para administradores, o relatório diário também inclui `settlement`, com o
+Para o perfil `daily_operator`, o relatório diário inclui `operatorShare`, com o valor bruto dos atendimentos próprios (`grossServicesCents`), os 50% pertencentes ao operador (`operatorShareCents`) e os 50% pertencentes ao administrador (`adminShareCents`).
+
+Para administradores, o relatório diário inclui `settlement`, com o
 valor bruto dos atendimentos, a parte integral dos atendimentos próprios e a
 divisão de 50% dos atendimentos de cada `daily_operator`. Despesas não são
 descontadas. Valores são calculados em centavos; em valores ímpares, o
@@ -318,10 +322,12 @@ O relatório periódico retorna:
 
 - período calculado;
 - quantidade de atendimentos;
-- receita bruta;
-- quantidade e total de despesas;
-- despesas agrupadas por forma de pagamento;
-- resultado líquido.
+- receita bruta (`grossRevenueCents`);
+- quantidade e total de despesas lançadas com vencimento no período (`expenseCount` e `expensesCents`);
+- despesa flexível separada referente à comissão de 50% dos `daily_operator` (`dailyOperatorsExpenseCents` e `dailyOperatorsExpense`), atualizada dinamicamente a cada novo atendimento registrado;
+- total geral de despesas (`totalExpensesCents` = `expensesCents` + `dailyOperatorsExpenseCents`);
+- despesas lançadas agrupadas por forma de pagamento (`expensesByPaymentMethod`);
+- resultado líquido (`netRevenueCents` = `grossRevenueCents` - `totalExpensesCents`).
 
 O intervalo considera o início inclusivo e o fim exclusivo do período.
 

@@ -1,6 +1,7 @@
 import {
   boolean,
   check,
+  date,
   integer,
   pgEnum,
   pgTable,
@@ -17,6 +18,7 @@ export const paymentMethodEnum = pgEnum("payment_method", [
   "pix",
   "credit_card",
   "debit_card",
+  "boleto",
   "other",
 ]);
 
@@ -106,6 +108,7 @@ export const expenses = pgTable(
     amountCents: integer("amount_cents").notNull(),
     category: varchar("category", { length: 100 }),
     paymentMethod: paymentMethodEnum("payment_method").notNull(),
+    dueDate: date("due_date", { mode: "string" }).notNull(),
     createdBy: uuid("created_by").references(() => appUsers.id, {
       onDelete: "restrict",
     }),

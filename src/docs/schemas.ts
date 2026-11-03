@@ -7,6 +7,11 @@ export async function registerSchemas(app: FastifyInstance) {
     enum: ["cash", "pix", "credit_card", "debit_card", "other"],
   });
   await app.addSchema({
+    $id: "ExpensePaymentMethod",
+    type: "string",
+    enum: ["cash", "pix", "credit_card", "debit_card", "boleto", "other"],
+  });
+  await app.addSchema({
     $id: "ErrorResponse",
     type: "object",
     properties: {
@@ -55,6 +60,8 @@ export async function registerSchemas(app: FastifyInstance) {
       serviceTypeId: { type: "string", format: "uuid" },
       serviceName: { type: "string" },
       priceCents: { type: "integer", minimum: 0 },
+      operatorShareCents: { type: "integer", minimum: 0 },
+      adminShareCents: { type: "integer", minimum: 0 },
       paymentMethod: { $ref: "PaymentMethod#" },
       occurredAt: { type: "string", format: "date-time" },
       notes: { type: ["string", "null"] },
@@ -64,7 +71,10 @@ export async function registerSchemas(app: FastifyInstance) {
     required: [
       "id",
       "serviceTypeId",
+      "serviceName",
       "priceCents",
+      "operatorShareCents",
+      "adminShareCents",
       "paymentMethod",
       "occurredAt",
       "createdAt",
@@ -78,11 +88,11 @@ export async function registerSchemas(app: FastifyInstance) {
       description: { type: "string", minLength: 1, maxLength: 200 },
       amountCents: { type: "integer", minimum: 1 },
       category: { type: "string", minLength: 1, maxLength: 100 },
-      paymentMethod: { $ref: "PaymentMethod#" },
-      occurredAt: { type: "string", format: "date-time" },
+      paymentMethod: { $ref: "ExpensePaymentMethod#" },
+      dueDate: { type: "string", format: "date" },
       notes: { type: "string", maxLength: 500 },
     },
-    required: ["description", "amountCents", "paymentMethod"],
+    required: ["description", "amountCents", "paymentMethod", "dueDate"],
   });
   await app.addSchema({
     $id: "Expense",
@@ -92,12 +102,34 @@ export async function registerSchemas(app: FastifyInstance) {
       description: { type: "string" },
       amountCents: { type: "integer", minimum: 1 },
       category: { type: ["string", "null"] },
-      paymentMethod: { $ref: "PaymentMethod#" },
-      occurredAt: { type: "string", format: "date-time" },
+      paymentMethod: { $ref: "ExpensePaymentMethod#" },
+      dueDate: { type: "string", format: "date" },
       notes: { type: ["string", "null"] },
       createdAt: { type: "string", format: "date-time" },
     },
-    required: ["id", "description", "amountCents", "paymentMethod", "occurredAt", "createdAt"],
+    required: ["id", "description", "amountCents", "paymentMethod", "dueDate", "createdAt"],
+  });
+  await app.addSchema({
+    $id: "OperatorDailyShare",
+    type: "object",
+    properties: {
+      userId: { type: "string", format: "uuid" },
+      userName: { type: "string" },
+      serviceCount: { type: "integer", minimum: 0 },
+      grossServicesCents: { type: "integer", minimum: 0 },
+      operatorShareCents: { type: "integer", minimum: 0 },
+      adminShareCents: { type: "integer", minimum: 0 },
+      sharePercentage: { type: "integer", enum: [50] },
+    },
+    required: [
+      "userId",
+      "userName",
+      "serviceCount",
+      "grossServicesCents",
+      "operatorShareCents",
+      "adminShareCents",
+      "sharePercentage",
+    ],
   });
   await app.addSchema({
     $id: "DailyReport",
@@ -108,6 +140,9 @@ export async function registerSchemas(app: FastifyInstance) {
       paymentMethods: { type: "array", items: { $ref: "PaymentSummary#" } },
       serviceCount: { type: "integer" },
       grossRevenueCents: { type: "integer" },
+      operatorShare: {
+        anyOf: [{ $ref: "OperatorDailyShare#" }, { type: "null" }],
+      },
       users: { type: "array", items: { $ref: "UserReportSummary#" } },
       settlement: {
         anyOf: [{ $ref: "DailyReportSettlement#" }, { type: "null" }],
@@ -119,6 +154,7 @@ export async function registerSchemas(app: FastifyInstance) {
       "paymentMethods",
       "serviceCount",
       "grossRevenueCents",
+      "operatorShare",
       "users",
       "settlement",
     ],
@@ -131,8 +167,17 @@ export async function registerSchemas(app: FastifyInstance) {
       serviceName: { type: "string" },
       quantity: { type: "integer", minimum: 0 },
       totalCents: { type: "integer", minimum: 0 },
+      operatorShareCents: { type: "integer", minimum: 0 },
+      adminShareCents: { type: "integer", minimum: 0 },
     },
-    required: ["serviceTypeId", "serviceName", "quantity", "totalCents"],
+    required: [
+      "serviceTypeId",
+      "serviceName",
+      "quantity",
+      "totalCents",
+      "operatorShareCents",
+      "adminShareCents",
+    ],
   });
   await app.addSchema({
     $id: "UserReportSummary",
@@ -143,6 +188,8 @@ export async function registerSchemas(app: FastifyInstance) {
       role: { type: ["string", "null"], enum: ["admin", "daily_operator", null] },
       serviceCount: { type: "integer", minimum: 0 },
       grossRevenueCents: { type: "integer", minimum: 0 },
+      operatorShareCents: { type: "integer", minimum: 0 },
+      adminShareCents: { type: "integer", minimum: 0 },
       services: { type: "array", items: { $ref: "UserServiceSummary#" } },
     },
     required: [
@@ -151,6 +198,8 @@ export async function registerSchemas(app: FastifyInstance) {
       "role",
       "serviceCount",
       "grossRevenueCents",
+      "operatorShareCents",
+      "adminShareCents",
       "services",
     ],
   });
@@ -176,6 +225,59 @@ export async function registerSchemas(app: FastifyInstance) {
     required: ["paymentMethod", "quantity", "totalCents"],
   });
   await app.addSchema({
+    $id: "ExpensePaymentSummary",
+    type: "object",
+    properties: {
+      paymentMethod: { $ref: "ExpensePaymentMethod#" },
+      quantity: { type: "integer", minimum: 0 },
+      totalCents: { type: "integer", minimum: 0 },
+    },
+    required: ["paymentMethod", "quantity", "totalCents"],
+  });
+  await app.addSchema({
+    $id: "FlexibleOperatorExpenseItem",
+    type: "object",
+    properties: {
+      userId: { type: "string", format: "uuid" },
+      userName: { type: "string" },
+      serviceCount: { type: "integer", minimum: 0 },
+      grossServicesCents: { type: "integer", minimum: 0 },
+      expenseCents: { type: "integer", minimum: 0 },
+      adminShareCents: { type: "integer", minimum: 0 },
+    },
+    required: [
+      "userId",
+      "userName",
+      "serviceCount",
+      "grossServicesCents",
+      "expenseCents",
+      "adminShareCents",
+    ],
+  });
+  await app.addSchema({
+    $id: "FlexibleOperatorsExpense",
+    type: "object",
+    properties: {
+      totalCents: { type: "integer", minimum: 0 },
+      grossServicesCents: { type: "integer", minimum: 0 },
+      adminShareCents: { type: "integer", minimum: 0 },
+      serviceCount: { type: "integer", minimum: 0 },
+      isFlexible: { type: "boolean" },
+      operators: {
+        type: "array",
+        items: { $ref: "FlexibleOperatorExpenseItem#" },
+      },
+    },
+    required: [
+      "totalCents",
+      "grossServicesCents",
+      "adminShareCents",
+      "serviceCount",
+      "isFlexible",
+      "operators",
+    ],
+  });
+  await app.addSchema({
     $id: "PeriodicReport",
     type: "object",
     properties: {
@@ -189,11 +291,14 @@ export async function registerSchemas(app: FastifyInstance) {
       grossRevenueCents: { type: "integer" },
       expenseCount: { type: "integer" },
       expensesCents: { type: "integer" },
+      dailyOperatorsExpenseCents: { type: "integer", minimum: 0 },
+      totalExpensesCents: { type: "integer", minimum: 0 },
       netRevenueCents: { type: "integer" },
       expensesByPaymentMethod: {
         type: "array",
-        items: { $ref: "PaymentSummary#" },
+        items: { $ref: "ExpensePaymentSummary#" },
       },
+      dailyOperatorsExpense: { $ref: "FlexibleOperatorsExpense#" },
       users: { type: "array", items: { $ref: "UserReportSummary#" } },
       settlement: {
         anyOf: [{ $ref: "PeriodicSettlement#" }, { type: "null" }],
@@ -207,8 +312,11 @@ export async function registerSchemas(app: FastifyInstance) {
       "grossRevenueCents",
       "expenseCount",
       "expensesCents",
+      "dailyOperatorsExpenseCents",
+      "totalExpensesCents",
       "netRevenueCents",
       "expensesByPaymentMethod",
+      "dailyOperatorsExpense",
       "users",
       "settlement",
     ],
