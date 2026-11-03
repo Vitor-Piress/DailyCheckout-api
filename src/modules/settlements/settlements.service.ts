@@ -8,21 +8,22 @@ import {
 } from "../../db/schema.js";
 
 export function calculateRoleRevenueSplit(
-  grossCents: number,
+  grossServicesCents: number,
   role: "admin" | "daily_operator" | null,
+  tipsCents = 0,
 ) {
   if (role === "daily_operator") {
-    const operatorShareCents = Math.floor(grossCents / 2);
+    const serviceOperatorShareCents = Math.floor(grossServicesCents / 2);
     return {
-      operatorShareCents,
-      adminShareCents: grossCents - operatorShareCents,
+      operatorShareCents: serviceOperatorShareCents + tipsCents,
+      adminShareCents: grossServicesCents - serviceOperatorShareCents,
     };
   }
 
   if (role === "admin") {
     return {
       operatorShareCents: 0,
-      adminShareCents: grossCents,
+      adminShareCents: grossServicesCents + tipsCents,
     };
   }
 
@@ -37,6 +38,7 @@ export type FlexibleOperatorExpenseItem = {
   userName: string;
   serviceCount: number;
   grossServicesCents: number;
+  tipsCents: number;
   expenseCents: number;
   adminShareCents: number;
 };
@@ -44,6 +46,7 @@ export type FlexibleOperatorExpenseItem = {
 export type FlexibleOperatorsExpense = {
   totalCents: number;
   grossServicesCents: number;
+  tipsCents: number;
   adminShareCents: number;
   serviceCount: number;
   isFlexible: true;
@@ -54,6 +57,7 @@ type OperatorSettlement = {
   userId: string;
   userName: string;
   grossServicesCents: number;
+  tipsCents: number;
   operatorShareCents: number;
   adminShareCents: number;
   serviceCount: number;
@@ -61,12 +65,16 @@ type OperatorSettlement = {
 
 export type DailySettlementCalculation = {
   adminOwnServicesCents: number;
+  adminTipsCents: number;
   dailyOperatorsShareCents: number;
+  dailyOperatorsTipsCents: number;
   adminDailyOperatorsShareCents: number;
   adminTotalDueCents: number;
   dailyOperatorsTotalDueCents: number;
   grossServicesCents: number;
+  tipsCents: number;
   unidentifiedServicesCents: number;
+  unidentifiedTipsCents: number;
   unidentifiedServiceCount: number;
   dailyOperators: OperatorSettlement[];
 };
@@ -76,12 +84,16 @@ export type PeriodicSettlement = {
   periodEndDate: string;
   calculationMode: "daily_snapshots_and_open_days";
   adminOwnServicesCents: number;
+  adminTipsCents: number;
   dailyOperatorsGrossServicesCents: number;
+  dailyOperatorsTipsCents: number;
+  tipsCents: number;
   dailyOperatorsShareCents: number;
   adminDailyOperatorsShareCents: number;
   adminTotalDueCents: number;
   dailyOperatorsTotalDueCents: number;
   unidentifiedServicesCents: number;
+  unidentifiedTipsCents: number;
   unidentifiedServiceCount: number;
   dailyOperators: OperatorSettlement[];
   days: Array<{
@@ -104,6 +116,7 @@ export async function calculateDailySettlement(
       role: appUsers.role,
       serviceCount: sql<number>`count(${serviceRecords.id})::int`,
       grossServicesCents: sql<number>`coalesce(sum(${serviceRecords.priceCents}), 0)::int`,
+      tipsCents: sql<number>`coalesce(sum(${serviceRecords.tipCents}), 0)::int`,
     })
     .from(serviceRecords)
     .leftJoin(appUsers, eq(serviceRecords.createdBy, appUsers.id))
@@ -116,39 +129,51 @@ export async function calculateDailySettlement(
     .groupBy(appUsers.id, appUsers.name, appUsers.role);
 
   let adminOwnServicesCents = 0;
+  let adminTipsCents = 0;
   let grossServicesCents = 0;
+  let tipsCents = 0;
   let unidentifiedServicesCents = 0;
+  let unidentifiedTipsCents = 0;
   let unidentifiedServiceCount = 0;
   const dailyOperators: OperatorSettlement[] = [];
 
   for (const row of rows) {
     const gross = row.grossServicesCents;
+    const tips = row.tipsCents;
     grossServicesCents += gross;
+    tipsCents += tips;
 
     if (row.role === "admin") {
       adminOwnServicesCents += gross;
+      adminTipsCents += tips;
       continue;
     }
 
     if (row.role === "daily_operator" && row.userId && row.userName) {
-      const operatorShareCents = Math.floor(gross / 2);
+      const split = calculateRoleRevenueSplit(gross, "daily_operator", tips);
       dailyOperators.push({
         userId: row.userId,
         userName: row.userName,
         grossServicesCents: gross,
-        operatorShareCents,
-        adminShareCents: gross - operatorShareCents,
+        tipsCents: tips,
+        operatorShareCents: split.operatorShareCents,
+        adminShareCents: split.adminShareCents,
         serviceCount: row.serviceCount,
       });
       continue;
     }
 
     unidentifiedServicesCents += gross;
+    unidentifiedTipsCents += tips;
     unidentifiedServiceCount += row.serviceCount;
   }
 
   const dailyOperatorsShareCents = dailyOperators.reduce(
     (total, operator) => total + operator.operatorShareCents,
+    0,
+  );
+  const dailyOperatorsTipsCents = dailyOperators.reduce(
+    (total, operator) => total + operator.tipsCents,
     0,
   );
   const adminDailyOperatorsShareCents = dailyOperators.reduce(
@@ -158,13 +183,17 @@ export async function calculateDailySettlement(
 
   return {
     adminOwnServicesCents,
+    adminTipsCents,
     dailyOperatorsShareCents,
+    dailyOperatorsTipsCents,
     adminDailyOperatorsShareCents,
     adminTotalDueCents:
-      adminOwnServicesCents + adminDailyOperatorsShareCents,
+      adminOwnServicesCents + adminTipsCents + adminDailyOperatorsShareCents,
     dailyOperatorsTotalDueCents: dailyOperatorsShareCents,
     grossServicesCents,
+    tipsCents,
     unidentifiedServicesCents,
+    unidentifiedTipsCents,
     unidentifiedServiceCount,
     dailyOperators,
   };
@@ -186,6 +215,7 @@ export async function getDailySettlement(date: string) {
       userId: dailySettlementItems.userId,
       userName: appUsers.name,
       grossServicesCents: dailySettlementItems.grossServicesCents,
+      tipsCents: dailySettlementItems.tipsCents,
       operatorShareCents: dailySettlementItems.operatorShareCents,
       adminShareCents: dailySettlementItems.adminShareCents,
       serviceCount: dailySettlementItems.serviceCount,
@@ -209,14 +239,18 @@ export async function getDailySettlement(date: string) {
     closedAt: settlement.closedAt,
     admin: {
       ownServicesCents: settlement.adminOwnServicesCents,
+      tipsCents: settlement.adminTipsCents,
       dailyOperatorsShareCents: settlement.adminDailyOperatorsShareCents,
       totalDueCents: settlement.adminTotalDueCents,
     },
     dailyOperators: items,
     grossServicesCents: settlement.grossServicesCents,
+    tipsCents: settlement.tipsCents,
+    dailyOperatorsTipsCents: settlement.dailyOperatorsTipsCents,
     dailyOperatorsTotalDueCents: settlement.dailyOperatorsTotalDueCents,
     closedBy: closedByUser ?? null,
     unidentifiedServicesCents: settlement.unidentifiedServicesCents,
+    unidentifiedTipsCents: settlement.unidentifiedTipsCents,
     unidentifiedServiceCount: settlement.unidentifiedServiceCount,
   };
 }
@@ -238,6 +272,7 @@ export async function calculateLiveOperatorsExpense(
       userName: appUsers.name,
       serviceCount: sql<number>`count(${serviceRecords.id})::int`,
       grossServicesCents: sql<number>`coalesce(sum(${serviceRecords.priceCents}), 0)::int`,
+      tipsCents: sql<number>`coalesce(sum(${serviceRecords.tipCents}), 0)::int`,
     })
     .from(serviceRecords)
     .innerJoin(appUsers, eq(serviceRecords.createdBy, appUsers.id))
@@ -261,18 +296,21 @@ export async function calculateLiveOperatorsExpense(
     const split = calculateRoleRevenueSplit(
       row.grossServicesCents,
       "daily_operator",
+      row.tipsCents,
     );
     const current = byOperator.get(row.userId) ?? {
       userId: row.userId,
       userName: row.userName,
       serviceCount: 0,
       grossServicesCents: 0,
+      tipsCents: 0,
       expenseCents: 0,
       adminShareCents: 0,
     };
 
     current.serviceCount += row.serviceCount;
     current.grossServicesCents += row.grossServicesCents;
+    current.tipsCents += row.tipsCents;
     current.expenseCents += split.operatorShareCents;
     current.adminShareCents += split.adminShareCents;
     byOperator.set(row.userId, current);
@@ -288,6 +326,7 @@ export async function calculateLiveOperatorsExpense(
       (sum, op) => sum + op.grossServicesCents,
       0,
     ),
+    tipsCents: operators.reduce((sum, op) => sum + op.tipsCents, 0),
     adminShareCents: operators.reduce((sum, op) => sum + op.adminShareCents, 0),
     serviceCount: operators.reduce((sum, op) => sum + op.serviceCount, 0),
     isFlexible: true,
@@ -317,6 +356,7 @@ export async function calculatePeriodicSettlement(
         role: appUsers.role,
         serviceCount: sql<number>`count(${serviceRecords.id})::int`,
         grossServicesCents: sql<number>`coalesce(sum(${serviceRecords.priceCents}), 0)::int`,
+        tipsCents: sql<number>`coalesce(sum(${serviceRecords.tipCents}), 0)::int`,
       })
       .from(serviceRecords)
       .leftJoin(appUsers, eq(serviceRecords.createdBy, appUsers.id))
@@ -344,6 +384,7 @@ export async function calculatePeriodicSettlement(
             userId: dailySettlementItems.userId,
             userName: appUsers.name,
             grossServicesCents: dailySettlementItems.grossServicesCents,
+            tipsCents: dailySettlementItems.tipsCents,
             operatorShareCents: dailySettlementItems.operatorShareCents,
             adminShareCents: dailySettlementItems.adminShareCents,
             serviceCount: dailySettlementItems.serviceCount,
@@ -373,10 +414,14 @@ export async function calculatePeriodicSettlement(
   const aggregate = new Map<string, OperatorSettlement>();
   const periodDays: PeriodicSettlement["days"] = [];
   let adminOwnServicesCents = 0;
+  let adminTipsCents = 0;
   let dailyOperatorsGrossServicesCents = 0;
+  let dailyOperatorsTipsCents = 0;
+  let tipsCents = 0;
   let dailyOperatorsShareCents = 0;
   let adminDailyOperatorsShareCents = 0;
   let unidentifiedServicesCents = 0;
+  let unidentifiedTipsCents = 0;
   let unidentifiedServiceCount = 0;
   let closedDaysCount = 0;
   let openDaysCount = 0;
@@ -388,10 +433,14 @@ export async function calculatePeriodicSettlement(
     if (snapshot) {
       closedDaysCount += 1;
       adminOwnServicesCents += snapshot.adminOwnServicesCents;
+      adminTipsCents += snapshot.adminTipsCents;
+      dailyOperatorsTipsCents += snapshot.dailyOperatorsTipsCents;
+      tipsCents += snapshot.tipsCents;
       dailyOperatorsShareCents += snapshot.dailyOperatorsTotalDueCents;
       adminDailyOperatorsShareCents +=
         snapshot.adminDailyOperatorsShareCents;
       unidentifiedServicesCents += snapshot.unidentifiedServicesCents;
+      unidentifiedTipsCents += snapshot.unidentifiedTipsCents;
       unidentifiedServiceCount += snapshot.unidentifiedServiceCount;
       periodDays.push({
         date,
@@ -406,11 +455,13 @@ export async function calculatePeriodicSettlement(
           userId: item.userId,
           userName: item.userName,
           grossServicesCents: 0,
+          tipsCents: 0,
           operatorShareCents: 0,
           adminShareCents: 0,
           serviceCount: 0,
         };
         current.grossServicesCents += item.grossServicesCents;
+        current.tipsCents += item.tipsCents;
         current.operatorShareCents += item.operatorShareCents;
         current.adminShareCents += item.adminShareCents;
         current.serviceCount += item.serviceCount;
@@ -420,31 +471,42 @@ export async function calculatePeriodicSettlement(
       openDaysCount += 1;
       const dayRows = liveRowsByDate.get(date) ?? [];
       let dayAdminOwnCents = 0;
+      let dayAdminTipsCents = 0;
+      let dayOperatorsTipsCents = 0;
+      let dayTipsCents = 0;
       let dayOperatorsShareCents = 0;
       let dayAdminOperatorsShareCents = 0;
       let dayUnidentifiedCents = 0;
+      let dayUnidentifiedTipsCents = 0;
       let dayUnidentifiedCount = 0;
 
       for (const row of dayRows) {
         const gross = row.grossServicesCents;
+        const tips = row.tipsCents;
+        dayTipsCents += tips;
+
         if (row.role === "admin") {
           dayAdminOwnCents += gross;
+          dayAdminTipsCents += tips;
           continue;
         }
         if (row.role === "daily_operator" && row.userId && row.userName) {
-          const split = calculateRoleRevenueSplit(gross, "daily_operator");
+          const split = calculateRoleRevenueSplit(gross, "daily_operator", tips);
           dayOperatorsShareCents += split.operatorShareCents;
+          dayOperatorsTipsCents += tips;
           dayAdminOperatorsShareCents += split.adminShareCents;
 
           const current = aggregate.get(row.userId) ?? {
             userId: row.userId,
             userName: row.userName,
             grossServicesCents: 0,
+            tipsCents: 0,
             operatorShareCents: 0,
             adminShareCents: 0,
             serviceCount: 0,
           };
           current.grossServicesCents += gross;
+          current.tipsCents += tips;
           current.operatorShareCents += split.operatorShareCents;
           current.adminShareCents += split.adminShareCents;
           current.serviceCount += row.serviceCount;
@@ -454,18 +516,24 @@ export async function calculatePeriodicSettlement(
         }
 
         dayUnidentifiedCents += gross;
+        dayUnidentifiedTipsCents += tips;
         dayUnidentifiedCount += row.serviceCount;
       }
 
       adminOwnServicesCents += dayAdminOwnCents;
+      adminTipsCents += dayAdminTipsCents;
+      dailyOperatorsTipsCents += dayOperatorsTipsCents;
+      tipsCents += dayTipsCents;
       dailyOperatorsShareCents += dayOperatorsShareCents;
       adminDailyOperatorsShareCents += dayAdminOperatorsShareCents;
       unidentifiedServicesCents += dayUnidentifiedCents;
+      unidentifiedTipsCents += dayUnidentifiedTipsCents;
       unidentifiedServiceCount += dayUnidentifiedCount;
       periodDays.push({
         date,
         status: "open",
-        adminTotalDueCents: dayAdminOwnCents + dayAdminOperatorsShareCents,
+        adminTotalDueCents:
+          dayAdminOwnCents + dayAdminTipsCents + dayAdminOperatorsShareCents,
         dailyOperatorsTotalDueCents: dayOperatorsShareCents,
       });
     }
@@ -486,13 +554,17 @@ export async function calculatePeriodicSettlement(
     periodEndDate: endDate,
     calculationMode: "daily_snapshots_and_open_days",
     adminOwnServicesCents,
+    adminTipsCents,
     dailyOperatorsGrossServicesCents,
+    dailyOperatorsTipsCents,
+    tipsCents,
     dailyOperatorsShareCents,
     adminDailyOperatorsShareCents,
     adminTotalDueCents:
-      adminOwnServicesCents + adminDailyOperatorsShareCents,
+      adminOwnServicesCents + adminTipsCents + adminDailyOperatorsShareCents,
     dailyOperatorsTotalDueCents: dailyOperatorsShareCents,
     unidentifiedServicesCents,
+    unidentifiedTipsCents,
     unidentifiedServiceCount,
     dailyOperators,
     days: periodDays,

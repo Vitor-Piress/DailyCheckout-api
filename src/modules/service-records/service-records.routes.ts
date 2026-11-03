@@ -5,18 +5,45 @@ import { db } from "../../db/client.js";
 import { appUsers, serviceRecords, serviceTypes } from "../../db/schema.js";
 import { calculateRoleRevenueSplit } from "../settlements/settlements.service.js";
 
-const createServiceRecordSchema = z.object({
-  serviceTypeId: z.uuid(),
-  paymentMethod: z.enum([
-    "cash",
-    "pix",
-    "credit_card",
-    "debit_card",
-    "other",
-  ]),
-  occurredAt: z.iso.datetime({ offset: true }).optional(),
-  notes: z.string().trim().max(500).optional(),
-});
+export const MAX_TIP_CENTS = 50_000;
+
+const servicePaymentMethods = [
+  "cash",
+  "pix",
+  "credit_card",
+  "debit_card",
+  "other",
+] as const;
+
+export const createServiceRecordSchema = z
+  .object({
+    serviceTypeId: z.uuid(),
+    paymentMethod: z.enum(servicePaymentMethods),
+    tipCents: z
+      .number()
+      .int("A gorjeta deve ser informada em centavos inteiros.")
+      .min(0, "A gorjeta não pode ser negativa.")
+      .max(
+        MAX_TIP_CENTS,
+        "A gorjeta máxima permitida por atendimento é R$ 500,00 (50000 centavos).",
+      )
+      .optional(),
+    tipPaymentMethod: z.enum(servicePaymentMethods).optional(),
+    occurredAt: z.iso.datetime({ offset: true }).optional(),
+    notes: z.string().trim().max(500).optional(),
+  })
+  .strict()
+  .superRefine((data, ctx) => {
+    const tipCents = data.tipCents ?? 0;
+    if (tipCents === 0 && data.tipPaymentMethod !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["tipPaymentMethod"],
+        message:
+          "A forma de pagamento da gorjeta só pode ser informada quando tipCents for maior que zero.",
+      });
+    }
+  });
 
 const listServiceRecordsQuerySchema = z.object({
   date: z.iso.date(),
@@ -62,7 +89,9 @@ export async function serviceRecordsRoutes(app: FastifyInstance) {
         serviceTypeId: serviceRecords.serviceTypeId,
         serviceName: serviceTypes.name,
         priceCents: serviceRecords.priceCents,
+        tipCents: serviceRecords.tipCents,
         paymentMethod: serviceRecords.paymentMethod,
+        tipPaymentMethod: serviceRecords.tipPaymentMethod,
         occurredAt: serviceRecords.occurredAt,
         notes: serviceRecords.notes,
         createdAt: serviceRecords.createdAt,
@@ -88,9 +117,11 @@ export async function serviceRecordsRoutes(app: FastifyInstance) {
       const split = calculateRoleRevenueSplit(
         row.priceCents,
         row.createdBy?.role ?? null,
+        row.tipCents,
       );
       return {
         ...row,
+        totalCents: row.priceCents + row.tipCents,
         operatorShareCents: split.operatorShareCents,
         adminShareCents: split.adminShareCents,
       };
@@ -123,7 +154,14 @@ export async function serviceRecordsRoutes(app: FastifyInstance) {
       );
     }
 
-    const { serviceTypeId, paymentMethod, occurredAt, notes } = parsedBody.data;
+    const {
+      serviceTypeId,
+      paymentMethod,
+      tipCents,
+      tipPaymentMethod,
+      occurredAt,
+      notes,
+    } = parsedBody.data;
     const [serviceType] = await db
       .select({
         id: serviceTypes.id,
@@ -142,12 +180,18 @@ export async function serviceRecordsRoutes(app: FastifyInstance) {
       });
     }
 
+    const resolvedTipCents = tipCents ?? 0;
+    const resolvedTipPaymentMethod =
+      resolvedTipCents > 0 ? (tipPaymentMethod ?? paymentMethod) : null;
+
     const [serviceRecord] = await db
       .insert(serviceRecords)
       .values({
         serviceTypeId: serviceType.id,
         priceCents: serviceType.priceCents,
+        tipCents: resolvedTipCents,
         paymentMethod,
+        tipPaymentMethod: resolvedTipPaymentMethod,
         occurredAt: occurredAt ? new Date(occurredAt) : undefined,
         createdBy: request.currentUser.id,
         notes: notes || null,
@@ -156,7 +200,9 @@ export async function serviceRecordsRoutes(app: FastifyInstance) {
         id: serviceRecords.id,
         serviceTypeId: serviceRecords.serviceTypeId,
         priceCents: serviceRecords.priceCents,
+        tipCents: serviceRecords.tipCents,
         paymentMethod: serviceRecords.paymentMethod,
+        tipPaymentMethod: serviceRecords.tipPaymentMethod,
         occurredAt: serviceRecords.occurredAt,
         notes: serviceRecords.notes,
         createdAt: serviceRecords.createdAt,
@@ -165,11 +211,13 @@ export async function serviceRecordsRoutes(app: FastifyInstance) {
     const split = calculateRoleRevenueSplit(
       serviceRecord.priceCents,
       request.currentUser.role,
+      serviceRecord.tipCents,
     );
 
     return reply.code(201).send({
       ...serviceRecord,
       serviceName: serviceType.name,
+      totalCents: serviceRecord.priceCents + serviceRecord.tipCents,
       operatorShareCents: split.operatorShareCents,
       adminShareCents: split.adminShareCents,
       createdBy: {

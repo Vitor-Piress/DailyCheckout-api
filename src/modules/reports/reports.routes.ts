@@ -12,17 +12,111 @@ import {
   getDailySettlement,
 } from "../settlements/settlements.service.js";
 
-type UserServiceSummaryRow = {
+type ServicePaymentMethod =
+  | "cash"
+  | "pix"
+  | "credit_card"
+  | "debit_card"
+  | "other";
+
+const SERVICE_PAYMENT_METHOD_ORDER: readonly ServicePaymentMethod[] = [
+  "cash",
+  "pix",
+  "credit_card",
+  "debit_card",
+  "other",
+];
+
+function isServicePaymentMethod(value: string | null): value is ServicePaymentMethod {
+  return (
+    value !== null &&
+    (SERVICE_PAYMENT_METHOD_ORDER as readonly string[]).includes(value)
+  );
+}
+
+export type PaymentGroupRow = {
+  paymentMethod: string;
+  tipPaymentMethod: string | null;
+  recordCount: number;
+  tipCount: number;
+  servicesCents: number;
+  tipsCents: number;
+};
+
+export function buildPaymentSummaries(rows: PaymentGroupRow[]) {
+  const byMethod = new Map<
+    ServicePaymentMethod,
+    {
+      paymentMethod: ServicePaymentMethod;
+      quantity: number;
+      servicesCents: number;
+      tipsCents: number;
+      totalCents: number;
+    }
+  >();
+
+  const getOrCreate = (method: ServicePaymentMethod) => {
+    const existing = byMethod.get(method);
+    if (existing) {
+      return existing;
+    }
+    const created = {
+      paymentMethod: method,
+      quantity: 0,
+      servicesCents: 0,
+      tipsCents: 0,
+      totalCents: 0,
+    };
+    byMethod.set(method, created);
+    return created;
+  };
+
+  for (const row of rows) {
+    if (!isServicePaymentMethod(row.paymentMethod)) {
+      continue;
+    }
+
+    const serviceEntry = getOrCreate(row.paymentMethod);
+    serviceEntry.quantity += row.recordCount;
+    serviceEntry.servicesCents += row.servicesCents;
+
+    if (row.tipsCents > 0) {
+      const effectiveTipMethod = isServicePaymentMethod(row.tipPaymentMethod)
+        ? row.tipPaymentMethod
+        : row.paymentMethod;
+      const tipEntry = getOrCreate(effectiveTipMethod);
+      tipEntry.tipsCents += row.tipsCents;
+
+      if (effectiveTipMethod !== row.paymentMethod) {
+        tipEntry.quantity += row.tipCount;
+      }
+    }
+  }
+
+  return SERVICE_PAYMENT_METHOD_ORDER.filter((method) =>
+    byMethod.has(method),
+  ).map((method) => {
+    const item = byMethod.get(method)!;
+    return {
+      ...item,
+      totalCents: item.servicesCents + item.tipsCents,
+    };
+  });
+}
+
+export type UserServiceSummaryRow = {
   userId: string | null;
   userName: string | null;
   role: "admin" | "daily_operator" | null;
   serviceTypeId: string;
   serviceName: string;
   quantity: number;
+  servicesCents: number;
+  tipsCents: number;
   totalCents: number;
 };
 
-function buildUserSummaries(rows: UserServiceSummaryRow[]) {
+export function buildUserSummaries(rows: UserServiceSummaryRow[]) {
   const summaries = new Map<
     string,
     {
@@ -30,6 +124,8 @@ function buildUserSummaries(rows: UserServiceSummaryRow[]) {
       userName: string;
       role: "admin" | "daily_operator" | null;
       serviceCount: number;
+      grossServicesCents: number;
+      tipsCents: number;
       grossRevenueCents: number;
       operatorShareCents: number;
       adminShareCents: number;
@@ -37,6 +133,8 @@ function buildUserSummaries(rows: UserServiceSummaryRow[]) {
         serviceTypeId: string;
         serviceName: string;
         quantity: number;
+        servicesCents: number;
+        tipsCents: number;
         totalCents: number;
         operatorShareCents: number;
         adminShareCents: number;
@@ -51,19 +149,29 @@ function buildUserSummaries(rows: UserServiceSummaryRow[]) {
       userName: row.userName ?? "Autor não identificado",
       role: row.role,
       serviceCount: 0,
+      grossServicesCents: 0,
+      tipsCents: 0,
       grossRevenueCents: 0,
       operatorShareCents: 0,
       adminShareCents: 0,
       services: [],
     };
 
-    const serviceSplit = calculateRoleRevenueSplit(row.totalCents, row.role);
+    const serviceSplit = calculateRoleRevenueSplit(
+      row.servicesCents,
+      row.role,
+      row.tipsCents,
+    );
     summary.serviceCount += row.quantity;
+    summary.grossServicesCents += row.servicesCents;
+    summary.tipsCents += row.tipsCents;
     summary.grossRevenueCents += row.totalCents;
     summary.services.push({
       serviceTypeId: row.serviceTypeId,
       serviceName: row.serviceName,
       quantity: row.quantity,
+      servicesCents: row.servicesCents,
+      tipsCents: row.tipsCents,
       totalCents: row.totalCents,
       operatorShareCents: serviceSplit.operatorShareCents,
       adminShareCents: serviceSplit.adminShareCents,
@@ -73,8 +181,9 @@ function buildUserSummaries(rows: UserServiceSummaryRow[]) {
 
   return [...summaries.values()].map((summary) => {
     const totalSplit = calculateRoleRevenueSplit(
-      summary.grossRevenueCents,
+      summary.grossServicesCents,
       summary.role,
+      summary.tipsCents,
     );
     return {
       ...summary,
@@ -166,8 +275,11 @@ async function buildDailySettlementReport(date: string) {
         admin: snapshot.admin,
         dailyOperators: snapshot.dailyOperators,
         grossServicesCents: snapshot.grossServicesCents,
+        tipsCents: snapshot.tipsCents,
+        dailyOperatorsTipsCents: snapshot.dailyOperatorsTipsCents,
         dailyOperatorsTotalDueCents: snapshot.dailyOperatorsTotalDueCents,
         unidentifiedServicesCents: snapshot.unidentifiedServicesCents,
+        unidentifiedTipsCents: snapshot.unidentifiedTipsCents,
         unidentifiedServiceCount: snapshot.unidentifiedServiceCount,
       }
     : null;
@@ -177,14 +289,18 @@ async function buildDailySettlementReport(date: string) {
     persistenceStatus: snapshot ? "closed" as const : "not_closed" as const,
     admin: {
       ownServicesCents: calculation.adminOwnServicesCents,
+      tipsCents: calculation.adminTipsCents,
       dailyOperatorsShareCents: calculation.adminDailyOperatorsShareCents,
       totalDueCents: calculatedAdminTotal,
     },
     dailyOperators: calculation.dailyOperators,
     grossServicesCents: calculation.grossServicesCents,
+    tipsCents: calculation.tipsCents,
+    dailyOperatorsTipsCents: calculation.dailyOperatorsTipsCents,
     dailyOperatorsTotalDueCents: calculatedOperatorsTotal,
     adminTotalDueCents: calculatedAdminTotal,
     unidentifiedServicesCents: calculation.unidentifiedServicesCents,
+    unidentifiedTipsCents: calculation.unidentifiedTipsCents,
     unidentifiedServiceCount: calculation.unidentifiedServiceCount,
     closedSettlement,
     hasDifferenceFromCurrentCalculation: snapshot
@@ -238,13 +354,15 @@ export async function reportsRoutes(app: FastifyInstance) {
         ? undefined
         : eq(serviceRecords.createdBy, request.currentUser.id);
 
-    const [serviceRows, servicePaymentRows, userServiceRows] = await Promise.all([
+    const [serviceRows, paymentGroupRows, userServiceRows] = await Promise.all([
       db
         .select({
           serviceTypeId: serviceTypes.id,
           serviceName: serviceTypes.name,
           quantity: sql<number>`count(${serviceRecords.id})::int`,
-          totalCents: sql<number>`coalesce(sum(${serviceRecords.priceCents}), 0)::int`,
+          servicesCents: sql<number>`coalesce(sum(${serviceRecords.priceCents}), 0)::int`,
+          tipsCents: sql<number>`coalesce(sum(${serviceRecords.tipCents}), 0)::int`,
+          totalCents: sql<number>`coalesce(sum(${serviceRecords.priceCents} + ${serviceRecords.tipCents}), 0)::int`,
         })
         .from(serviceRecords)
         .innerJoin(serviceTypes, eq(serviceRecords.serviceTypeId, serviceTypes.id))
@@ -256,12 +374,15 @@ export async function reportsRoutes(app: FastifyInstance) {
           ),
         )
         .groupBy(serviceTypes.id, serviceTypes.name)
-        .orderBy(sql`sum(${serviceRecords.priceCents}) desc`),
+        .orderBy(sql`sum(${serviceRecords.priceCents} + ${serviceRecords.tipCents}) desc`),
       db
         .select({
           paymentMethod: serviceRecords.paymentMethod,
-          quantity: sql<number>`count(${serviceRecords.id})::int`,
-          totalCents: sql<number>`coalesce(sum(${serviceRecords.priceCents}), 0)::int`,
+          tipPaymentMethod: serviceRecords.tipPaymentMethod,
+          recordCount: sql<number>`count(${serviceRecords.id})::int`,
+          tipCount: sql<number>`count(*) filter (where ${serviceRecords.tipCents} > 0)::int`,
+          servicesCents: sql<number>`coalesce(sum(${serviceRecords.priceCents}), 0)::int`,
+          tipsCents: sql<number>`coalesce(sum(${serviceRecords.tipCents}), 0)::int`,
         })
         .from(serviceRecords)
         .where(
@@ -271,8 +392,7 @@ export async function reportsRoutes(app: FastifyInstance) {
             authorFilter,
           ),
         )
-        .groupBy(serviceRecords.paymentMethod)
-        .orderBy(serviceRecords.paymentMethod),
+        .groupBy(serviceRecords.paymentMethod, serviceRecords.tipPaymentMethod),
       db
         .select({
           userId: appUsers.id,
@@ -281,7 +401,9 @@ export async function reportsRoutes(app: FastifyInstance) {
           serviceTypeId: serviceTypes.id,
           serviceName: serviceTypes.name,
           quantity: sql<number>`count(${serviceRecords.id})::int`,
-          totalCents: sql<number>`coalesce(sum(${serviceRecords.priceCents}), 0)::int`,
+          servicesCents: sql<number>`coalesce(sum(${serviceRecords.priceCents}), 0)::int`,
+          tipsCents: sql<number>`coalesce(sum(${serviceRecords.tipCents}), 0)::int`,
+          totalCents: sql<number>`coalesce(sum(${serviceRecords.priceCents} + ${serviceRecords.tipCents}), 0)::int`,
         })
         .from(serviceRecords)
         .innerJoin(serviceTypes, eq(serviceRecords.serviceTypeId, serviceTypes.id))
@@ -307,10 +429,15 @@ export async function reportsRoutes(app: FastifyInstance) {
       (total, service) => total + service.quantity,
       0,
     );
-    const grossRevenueCents = serviceRows.reduce(
-      (total, service) => total + service.totalCents,
+    const grossServicesCents = serviceRows.reduce(
+      (total, service) => total + service.servicesCents,
       0,
     );
+    const tipsCents = serviceRows.reduce(
+      (total, service) => total + service.tipsCents,
+      0,
+    );
+    const grossRevenueCents = grossServicesCents + tipsCents;
     const settlement =
       request.currentUser.role === "admin"
         ? await buildDailySettlementReport(date)
@@ -319,14 +446,17 @@ export async function reportsRoutes(app: FastifyInstance) {
       request.currentUser.role === "daily_operator"
         ? (() => {
             const split = calculateRoleRevenueSplit(
-              grossRevenueCents,
+              grossServicesCents,
               "daily_operator",
+              tipsCents,
             );
             return {
               userId: request.currentUser.id,
               userName: request.currentUser.name,
               serviceCount,
-              grossServicesCents: grossRevenueCents,
+              grossServicesCents,
+              tipsCents,
+              grossRevenueCents,
               operatorShareCents: split.operatorShareCents,
               adminShareCents: split.adminShareCents,
               sharePercentage: 50 as const,
@@ -337,8 +467,10 @@ export async function reportsRoutes(app: FastifyInstance) {
     return {
       date,
       services: serviceRows,
-      paymentMethods: servicePaymentRows,
+      paymentMethods: buildPaymentSummaries(paymentGroupRows),
       serviceCount,
+      grossServicesCents,
+      tipsCents,
       grossRevenueCents,
       operatorShare,
       users: buildUserSummaries(userServiceRows),
@@ -394,7 +526,9 @@ export async function reportsRoutes(app: FastifyInstance) {
           db
             .select({
               quantity: sql<number>`count(${serviceRecords.id})::int`,
-              totalCents: sql<number>`coalesce(sum(${serviceRecords.priceCents}), 0)::int`,
+              servicesCents: sql<number>`coalesce(sum(${serviceRecords.priceCents}), 0)::int`,
+              tipsCents: sql<number>`coalesce(sum(${serviceRecords.tipCents}), 0)::int`,
+              totalCents: sql<number>`coalesce(sum(${serviceRecords.priceCents} + ${serviceRecords.tipCents}), 0)::int`,
             })
             .from(serviceRecords)
             .where(
@@ -438,7 +572,9 @@ export async function reportsRoutes(app: FastifyInstance) {
               serviceTypeId: serviceTypes.id,
               serviceName: serviceTypes.name,
               quantity: sql<number>`count(${serviceRecords.id})::int`,
-              totalCents: sql<number>`coalesce(sum(${serviceRecords.priceCents}), 0)::int`,
+              servicesCents: sql<number>`coalesce(sum(${serviceRecords.priceCents}), 0)::int`,
+              tipsCents: sql<number>`coalesce(sum(${serviceRecords.tipCents}), 0)::int`,
+              totalCents: sql<number>`coalesce(sum(${serviceRecords.priceCents} + ${serviceRecords.tipCents}), 0)::int`,
             })
             .from(serviceRecords)
             .innerJoin(serviceTypes, eq(serviceRecords.serviceTypeId, serviceTypes.id))
@@ -463,6 +599,8 @@ export async function reportsRoutes(app: FastifyInstance) {
             : Promise.resolve(null),
         ]);
 
+        const grossServicesCents = serviceSummary[0]?.servicesCents ?? 0;
+        const tipsCents = serviceSummary[0]?.tipsCents ?? 0;
         const grossRevenueCents = serviceSummary[0]?.totalCents ?? 0;
         const expensesCents = expenseSummary[0]?.totalCents ?? 0;
         const dailyOperatorsExpenseCents = dailyOperatorsExpense.totalCents;
@@ -473,6 +611,8 @@ export async function reportsRoutes(app: FastifyInstance) {
           startDate,
           endDate,
           serviceCount: serviceSummary[0]?.quantity ?? 0,
+          grossServicesCents,
+          tipsCents,
           grossRevenueCents,
           expenseCount: expenseSummary[0]?.quantity ?? 0,
           expensesCents,

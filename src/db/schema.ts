@@ -84,7 +84,9 @@ export const serviceRecords = pgTable(
       onDelete: "restrict",
     }),
     priceCents: integer("price_cents").notNull(),
+    tipCents: integer("tip_cents").notNull().default(0),
     paymentMethod: paymentMethodEnum("payment_method").notNull(),
+    tipPaymentMethod: paymentMethodEnum("tip_payment_method"),
     occurredAt: timestamp("occurred_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -97,6 +99,14 @@ export const serviceRecords = pgTable(
   },
   (table) => [
     check("service_records_price_cents_non_negative", sql`${table.priceCents} >= 0`),
+    check(
+      "service_records_tip_cents_bounds",
+      sql`${table.tipCents} >= 0 AND ${table.tipCents} <= 50000`,
+    ),
+    check(
+      "service_records_tip_payment_method_consistency",
+      sql`(${table.tipCents} = 0 AND ${table.tipPaymentMethod} IS NULL) OR (${table.tipCents} > 0 AND ${table.tipPaymentMethod} IS NOT NULL AND ${table.tipPaymentMethod} <> 'boleto')`,
+    ),
   ],
 );
 
@@ -136,7 +146,11 @@ export const dailySettlements = pgTable(
       mode: "string",
     }).notNull(),
     adminOwnServicesCents: integer("admin_own_services_cents").notNull(),
+    adminTipsCents: integer("admin_tips_cents").notNull().default(0),
     dailyOperatorsShareCents: integer("daily_operators_share_cents").notNull(),
+    dailyOperatorsTipsCents: integer("daily_operators_tips_cents")
+      .notNull()
+      .default(0),
     adminDailyOperatorsShareCents: integer(
       "admin_daily_operators_share_cents",
     ).notNull(),
@@ -147,10 +161,14 @@ export const dailySettlements = pgTable(
     unidentifiedServicesCents: integer("unidentified_services_cents")
       .notNull()
       .default(0),
+    unidentifiedTipsCents: integer("unidentified_tips_cents")
+      .notNull()
+      .default(0),
     unidentifiedServiceCount: integer("unidentified_service_count")
       .notNull()
       .default(0),
     grossServicesCents: integer("gross_services_cents").notNull(),
+    tipsCents: integer("tips_cents").notNull().default(0),
     status: settlementStatusEnum("status").notNull().default("closed"),
     closedAt: timestamp("closed_at", { withTimezone: true }),
     closedBy: uuid("closed_by").references(() => appUsers.id, {
@@ -179,6 +197,7 @@ export const dailySettlementItems = pgTable(
       .notNull()
       .references(() => appUsers.id, { onDelete: "restrict" }),
     grossServicesCents: integer("gross_services_cents").notNull(),
+    tipsCents: integer("tips_cents").notNull().default(0),
     operatorShareCents: integer("operator_share_cents").notNull(),
     adminShareCents: integer("admin_share_cents").notNull(),
     serviceCount: integer("service_count").notNull(),

@@ -104,14 +104,18 @@ export async function settlementsRoutes(app: FastifyInstance) {
           .values({
             settlementDate: date,
             adminOwnServicesCents: calculation.adminOwnServicesCents,
+            adminTipsCents: calculation.adminTipsCents,
             dailyOperatorsShareCents: calculation.dailyOperatorsShareCents,
+            dailyOperatorsTipsCents: calculation.dailyOperatorsTipsCents,
             adminDailyOperatorsShareCents:
               calculation.adminDailyOperatorsShareCents,
             adminTotalDueCents: calculation.adminTotalDueCents,
             dailyOperatorsTotalDueCents:
               calculation.dailyOperatorsTotalDueCents,
             grossServicesCents: calculation.grossServicesCents,
+            tipsCents: calculation.tipsCents,
             unidentifiedServicesCents: calculation.unidentifiedServicesCents,
+            unidentifiedTipsCents: calculation.unidentifiedTipsCents,
             unidentifiedServiceCount: calculation.unidentifiedServiceCount,
             status: "closed",
             closedAt: new Date(),
@@ -132,6 +136,7 @@ export async function settlementsRoutes(app: FastifyInstance) {
               settlementId: settlement.id,
               userId: operator.userId,
               grossServicesCents: operator.grossServicesCents,
+              tipsCents: operator.tipsCents,
               operatorShareCents: operator.operatorShareCents,
               adminShareCents: operator.adminShareCents,
               serviceCount: operator.serviceCount,

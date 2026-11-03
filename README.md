@@ -179,12 +179,14 @@ Payload:
 ```json
 {
   "serviceTypeId": "00000000-0000-0000-0000-000000000000",
-  "paymentMethod": "pix",
+  "paymentMethod": "credit_card",
+  "tipCents": 1000,
+  "tipPaymentMethod": "pix",
   "notes": "Cliente sem observações"
 }
 ```
 
-`paymentMethod` aceita:
+`paymentMethod` e `tipPaymentMethod` aceitam:
 
 - `cash`
 - `pix`
@@ -192,7 +194,12 @@ Payload:
 - `debit_card`
 - `other`
 
-O preço não é recebido do frontend. A API consulta o preço atual do catálogo e grava uma cópia no atendimento para preservar o histórico.
+O preço do serviço não é recebido do frontend. A API consulta o preço atual do catálogo e grava uma cópia no atendimento para preservar o histórico.
+
+Campos opcionais de gorjeta no atendimento:
+
+- `tipCents`: inteiro em centavos de `0` até `50000` (R$ 500,00), padrão `0`;
+- `tipPaymentMethod`: forma de pagamento da gorjeta quando `tipCents > 0`. Se omitido e houver gorjeta, assume automaticamente a mesma `paymentMethod` do serviço; se não houver gorjeta (`tipCents = 0`), não deve ser enviado.
 
 Listar atendimentos de um dia:
 
@@ -200,7 +207,7 @@ Listar atendimentos de um dia:
 GET /service-records?date=2026-10-31
 ```
 
-Cada atendimento inclui o perfil que realizou o lançamento em `createdBy`, além da divisão financeira em centavos (`operatorShareCents` e `adminShareCents`, seguindo a regra 50%/50% para `daily_operator` e 100% para `admin`).
+Cada atendimento inclui o perfil que realizou o lançamento em `createdBy`, os valores `priceCents`, `tipCents`, `totalCents` (`priceCents + tipCents`), `tipPaymentMethod`, além da divisão financeira em centavos (`operatorShareCents` e `adminShareCents`). O valor do serviço (`priceCents`) segue a regra 50%/50% para `daily_operator` e 100% para `admin`, enquanto a gorjeta (`tipCents`) vai **100% para quem realizou o atendimento** (sem divisão para `daily_operator`).
 Administradores visualizam os lançamentos de todos os usuários; o perfil
 `daily_operator` visualiza somente os atendimentos criados por ele.
 
@@ -254,26 +261,26 @@ GET /reports/daily?date=2026-10-31
 
 O relatório diário retorna:
 
-- quantidade total de atendimentos;
-- receita bruta em centavos;
-- resumo por serviço;
-- resumo por forma de pagamento.
+- quantidade total de atendimentos (`serviceCount`);
+- receita de serviços (`grossServicesCents`), total de gorjetas (`tipsCents`) e receita bruta total (`grossRevenueCents`);
+- resumo por serviço (`servicesCents`, `tipsCents`, `totalCents`);
+- resumo por forma de pagamento (`servicesCents`, `tipsCents`, `totalCents`, contabilizando gorjetas pagas em meio distinto do serviço no respectivo meio de pagamento).
 
 Os totais do relatório diário respeitam a mesma regra de autoria: o perfil
 `admin` visualiza todos os atendimentos e o perfil `daily_operator` visualiza
 somente os próprios lançamentos.
 
 O campo `users` discrimina os atendimentos por usuário e tipo de serviço,
-incluindo `serviceCount`, `grossRevenueCents` e os serviços realizados por
+incluindo `serviceCount`, `grossServicesCents`, `tipsCents`, `grossRevenueCents` e os serviços realizados por
 cada usuário. O relatório periódico retorna a mesma estrutura para todo o
 período. Registros antigos sem autor aparecem como `Autor não identificado`.
 
-Para o perfil `daily_operator`, o relatório diário inclui `operatorShare`, com o valor bruto dos atendimentos próprios (`grossServicesCents`), os 50% pertencentes ao operador (`operatorShareCents`) e os 50% pertencentes ao administrador (`adminShareCents`).
+Para o perfil `daily_operator`, o relatório diário inclui `operatorShare`, com o valor bruto dos serviços próprios (`grossServicesCents`), as gorjetas recebidas (`tipsCents`), os 50% dos serviços + 100% das gorjetas pertencentes ao operador (`operatorShareCents`) e os 50% dos serviços pertencentes ao administrador (`adminShareCents`).
 
 Para administradores, o relatório diário inclui `settlement`, com o
-valor bruto dos atendimentos, a parte integral dos atendimentos próprios e a
-divisão de 50% dos atendimentos de cada `daily_operator`. Despesas não são
-descontadas. Valores são calculados em centavos; em valores ímpares, o
+valor bruto dos serviços (`grossServicesCents`), gorjetas discriminadas (`tipsCents`, `admin.tipsCents`, `dailyOperatorsTipsCents`), a parte integral dos atendimentos e gorjetas próprios do `admin` e a
+divisão de 50% dos serviços de cada `daily_operator` (mantendo 100% das gorjetas do operador no repasse dele). Despesas não são
+descontadas. Valores são calculados em centavos; em valores ímpares de serviço, o
 centavo restante fica com o administrador.
 
 O fechamento diário persistido pode ser consultado e realizado somente por
@@ -321,10 +328,10 @@ da segunda-feira seguinte, usando o fuso `America/Sao_Paulo`.
 O relatório periódico retorna:
 
 - período calculado;
-- quantidade de atendimentos;
-- receita bruta (`grossRevenueCents`);
+- quantidade de atendimentos (`serviceCount`);
+- receita de serviços (`grossServicesCents`), gorjetas (`tipsCents`) e receita bruta total (`grossRevenueCents`);
 - quantidade e total de despesas lançadas com vencimento no período (`expenseCount` e `expensesCents`);
-- despesa flexível separada referente à comissão de 50% dos `daily_operator` (`dailyOperatorsExpenseCents` e `dailyOperatorsExpense`), atualizada dinamicamente a cada novo atendimento registrado;
+- despesa flexível separada referente ao repasse dos `daily_operator` (`dailyOperatorsExpenseCents` e `dailyOperatorsExpense`, somando 50% dos serviços + 100% das gorjetas deles), atualizada dinamicamente a cada novo atendimento registrado;
 - total geral de despesas (`totalExpensesCents` = `expensesCents` + `dailyOperatorsExpenseCents`);
 - despesas lançadas agrupadas por forma de pagamento (`expensesByPaymentMethod`);
 - resultado líquido (`netRevenueCents` = `grossRevenueCents` - `totalExpensesCents`).

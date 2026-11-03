@@ -43,6 +43,13 @@
       "when": 1793682000000,
       "tag": "0005_expenses_due_date_and_boleto",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793738100000,
+      "tag": "0006_service_records_tips",
+      "breakpoints": true
     }
   ]
 }
