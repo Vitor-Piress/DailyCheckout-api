@@ -12,7 +12,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx scripts/seed.ts",
-    "users:link": "tsx scripts/link-user.ts"
+    "users:link": "tsx scripts/link-user.ts",
+    "users:clear-data": "tsx scripts/clear-user-data.ts"
   },
   "keywords": [
     "dailycheckout",
